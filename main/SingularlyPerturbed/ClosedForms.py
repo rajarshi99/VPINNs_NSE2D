@@ -424,10 +424,9 @@ if __name__ == "__main__":
         exit(0)
     
     # Read the input yaml file
-    # with open(sys.argv[1], 'r') as f:
-    #     input_data = yaml.safe_load(f)
-    with open("input.yaml", 'r') as f:
+    with open(sys.argv[1], 'r') as f:
         input_data = yaml.safe_load(f)
+   
     
     save_directory = input_data["model_save_params"]["save_directory"]
 
@@ -448,7 +447,7 @@ if __name__ == "__main__":
 
     max_iter = input_data["model_run_params"]["max_iter"]
     
-    
+
     # Assign BX and By
     b_x = input_data["bilinear_coefficients"]['bx']
     b_y = input_data["bilinear_coefficients"]['by']
@@ -502,28 +501,44 @@ if __name__ == "__main__":
     omegax = 2*np.pi
     omegay = 2*np.pi
     r1 = 10
+    
+    # Read the csv file and save the exact Solution
+    output_file = input_data["model_run_params"]["exact_solution_csv"]
+    exact_solution = np.genfromtxt(output_file, delimiter=',')
+    
 
-    ## For all the funcitons, the values are calculated by multiplying the incoming variables to preserve the shape.
-
+    ## For u_ext and f_ext, the values are calculated by multiplying the incoming variables to preserve the shape.
+    # Function which stores the exact solution , So it will be used to obtain boundary values also
+    # For now, use the below for boundary and use the `u_exact` for computing loss
     def u_ext(x, y):
-        # utemp = (0.1*np.sin(omegax*x) + np.tanh(r1*x)) * np.sin(omegay*(y))
-        #Using np.isclose, if y is close to 1, then utemp = 0
-        # if np.allclose(y, 1.0, 1e-6):
-        #     utemp = np.ones_like(x)
-        # else:
-        #     utemp = np.zeros_like(x)
-        utemp = x*0.0 
+        # Check if the given arrays x and y are arrays or just single elements
+        if np.isscalar(x) and np.isscalar(y):
+            # If both x and y are single elements, assign the value of u_temp based on the value of y
+            if np.isclose(y, 1):
+                utemp = 1.0
+            else:
+                utemp = 0
+        else:
+            # If either x or y is an array, assign the value of u_temp based on the values of y
+            utemp = np.zeros_like(y)
+            utemp[np.isclose(y, 1)] = 1.0
         return utemp
     
-    def u_boundary(x,y):
-
-        return x*0.0
-
+    # The Exact Solution Needs to be loaded from an external File for computing the solution 
+    # assume that the exact solution is stored in the `exact_solution` numpy array
+    def u_exact(x, y):
+        # return the last column of the exact_solution Array
+        return exact_solution[:,-1].reshape(-1,1)
+        
+    
+    
     def f_ext(x,y):
         # gtemp = (-0.1*(omegax**2)*np.sin(omegax*x) - (2*r1**2)*(np.tanh(r1*x))/((np.cosh(r1*x))**2))*np.sin(omegay*(y))\
                 # +(0.1*np.sin(omegax*x) + np.tanh(r1*x)) * (-omegay**2 * np.sin(omegay*(y)) )
         gtemp = x*0.0 + 1.0
         return gtemp
+
+    
     
     ###########################################################################
     # Boundary points
@@ -603,6 +618,7 @@ if __name__ == "__main__":
     U_ext_total = []
     F_ext_total = []
     
+
     
     # %%
     
@@ -654,23 +670,32 @@ if __name__ == "__main__":
 #    U_ext_total = np.reshape(U_ext_total, [NE_x, NE_y, N_test_y, N_test_x])
     F_ext_total = np.reshape(F_ext_total, [NE_x, NE_y, N_test_y[0], N_test_x[0]])
     
+
     ###########################################################################
     # Test points
     delta_test = 0.01
     xtest = np.arange(x_l, x_r + delta_test, delta_test)
     ytest = np.arange(y_l, y_u + delta_test, delta_test)
-    data_temp = np.asarray([[ [xtest[i],ytest[j],u_ext(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))])
+    
+    # Thivin - Data_temp is modified to not to compute exact value using the given function
+    data_temp = np.asarray([[ [xtest[i],ytest[j],0.0] for i in range(len(xtest))] for j in range(len(ytest))])
+    
     Xtest = data_temp.flatten()[0::3]
     Ytest = data_temp.flatten()[1::3]
-    Exact = data_temp.flatten()[2::3]
+    #  Exact = data_temp.flatten()[2::3]   # Thivin -- removed to read from external file
+    Exact = u_exact(Xtest, Xtest)
+    
     X_test = np.hstack((Xtest[:,None],Ytest[:,None]))
     u_test = Exact[:,None]
+    
+    
 
 
     ###########################################################################
     model = VPINN(X_u_train, u_train, X_f_train, f_train, XY_quad_train, WXY_quad_train,\
                   U_ext_total, F_ext_total, grid_x, grid_y, N_testfcn_total, X_test, u_test, Net_layer,input_data)
     
+
     u_pred_his, loss_his = [], []
     model.train(max_iter + 1)
     u_pred = model.predict()
@@ -689,6 +714,7 @@ if __name__ == "__main__":
     plt.rcParams['legend.fontsize'] = 20
     plt.rcParams['ytick.labelsize'] = 20
     plt.rcParams['axes.labelsize'] = 20
+    plt.rcParams['axes.titlesize'] = 20
     plt.rcParams['font.size'] = 20
     plt.rcParams['axes.prop_cycle'] = cycler(color=['darkblue', '#d62728', '#2ca02c', '#ff7f0e', '#bcbd22', '#8c564b', '#17becf', '#9467bd', '#e377c2', '#7f7f7f'])
 
@@ -723,15 +749,15 @@ if __name__ == "__main__":
         plt.axhline(1, linewidth=1, linestyle='--', color='k')
         plt.axvline(-1, linewidth=1, linestyle='--', color='k')
         plt.axvline(1, linewidth=1, linestyle='--', color='k')
-    plt.xlim([-1.1,1.1])
-    plt.ylim([-1.1,1.1])
+    plt.xlim([-0.1,1.1])
+    plt.ylim([-0.1,1.])
     plt.xlabel(r'$x$')
     plt.ylabel(r'$y$')
     #ax.set_aspect(1)
     ax.locator_params(nbins=5)
     plt.tick_params()
     #fig.tight_layout()
-    fig.set_size_inches(w=11,h=11)
+    fig.set_size_inches(w=6.4, h=4.8)
     plt.title(r'Boundary Points for $\epsilon$ = %s' % (input_data["bilinear_coefficients"]['eps']))
     plt.savefig(f"{save_directory}/training_points.png", dpi=300, bbox_inches='tight')
     plt.savefig(f"{save_directory}/training_points.eps", dpi=300, bbox_inches='tight')
@@ -747,7 +773,7 @@ if __name__ == "__main__":
 
     fig_ext, ax_ext = plt.subplots(constrained_layout=True, figsize=(6.4, 4.8))
     CS_ext = ax_ext.contourf(x_test_plot, y_test_plot, u_test_plot, 100, cmap='jet', origin='lower')
-    cbar = fig_ext.colorbar(CS_ext, shrink=0.67)
+    cbar = fig_ext.colorbar(CS_ext, shrink=0.85)
     cbar.ax.tick_params()
     ax_ext.locator_params(nbins=8)
     ax_ext.set_xlabel('$x$')
@@ -764,7 +790,7 @@ if __name__ == "__main__":
     
     fig_pred, ax_pred = plt.subplots(constrained_layout=True, figsize=(6.4, 4.8))
     CS_pred = ax_pred.contourf(x_test_plot, y_test_plot, u_pred_plot, 100, cmap='jet', origin='lower')
-    cbar = fig_pred.colorbar(CS_pred, shrink=0.67)
+    cbar = fig_pred.colorbar(CS_pred, shrink=0.85)
     cbar.ax.tick_params()
     ax_pred.locator_params(nbins=8)
     ax_pred.set_xlabel('$x$')
@@ -772,7 +798,7 @@ if __name__ == "__main__":
     plt.tick_params( )
     ax_pred.set_aspect(1)
     #fig.tight_layout()
-    fig_pred.set_size_inches(w=11,h=11)
+    fig_pred.set_size_inches(w=6.4, h=4.8)
     plt.title(r'Predicted Solution for $\epsilon$ = %s' % (input_data["bilinear_coefficients"]['eps']))
     plt.savefig(f"{save_directory}/Predicted_Solution.png", dpi=300, bbox_inches='tight')
     plt.savefig(f"{save_directory}/Predicted_Solution.eps", dpi=300, bbox_inches='tight')
@@ -781,7 +807,7 @@ if __name__ == "__main__":
     
     fig_err, ax_err = plt.subplots(constrained_layout=True, figsize=(6.4, 4.8))
     CS_err = ax_err.contourf(x_test_plot, y_test_plot, abs(u_test_plot - u_pred_plot), 100, cmap='jet', origin='lower')
-    cbar = fig_err.colorbar(CS_err, shrink=0.65, format="%.4f")
+    cbar = fig_err.colorbar(CS_err, shrink=0.85, format="%.4f")
     cbar.ax.tick_params()
     ax_err.locator_params(nbins=8)
     ax_err.set_xlabel('$x$')
@@ -789,7 +815,7 @@ if __name__ == "__main__":
     plt.tick_params( )
     ax_err.set_aspect(1)
     #fig.tight_layout()
-    fig_err.set_size_inches(w=11,h=11)
+    fig_err.set_size_inches(w=6.4, h=4.8)
     plt.title(r'Absolute Error for $\epsilon$ = %s' % (input_data["bilinear_coefficients"]['eps']))
     plt.savefig(f"{save_directory}/Absolute_Error.png", dpi=300, bbox_inches='tight')
     plt.savefig(f"{save_directory}/Absolute_Error.eps", dpi=300, bbox_inches='tight')
@@ -799,12 +825,45 @@ if __name__ == "__main__":
     # Save the x_test_plot, y_test_plot, u_test_plot, u_pred_plot
     np.savez(f"{save_directory}/data.npz", x_test_plot=x_test_plot, y_test_plot=y_test_plot, u_test_plot=u_test_plot, u_pred_plot=u_pred_plot)
     
+
+    # Compute the Error Between predicted and the actual 
+    l2_error = np.linalg.norm(u_test_plot - u_pred_plot, 2)/np.linalg.norm(u_test_plot, 2)
+    l1_error = np.linalg.norm(u_test_plot - u_pred_plot, 1)/np.linalg.norm(u_test_plot, 1)
+    linf_error = np.linalg.norm(u_test_plot - u_pred_plot, np.inf)/np.linalg.norm(u_test_plot, np.inf)
+
+    # Print all the Errors 
+    print("-" * 82)
+    print(f"| {'Summary of Training':^78} |")
+    print("-" * 82)
+    print(f"| {'Parameter':<20} | {'Value':<55} |")
+    print("|" + "-" * 80 + "|")
+    print(f"| {'L2 Error':<20} | {l2_error:<55} |")
+    print(f"| {'L1 Error':<20} | {l1_error:<55} |")
+    print(f"| {'Linf Error':<20} | {linf_error:<55} |")
+    print(f"| {'Train Loss':<20} | {loss_his[-1]:<55} |")
+    print(f"| {'Train Time':<20} | {model.total_train_time:<55} |")
+    print("-" * 82)
+    
+    
+    
+    
+    
+
     # if use mlflow
     if input_data['mlflow_parameters']['use_mlflow']:
         print("MLflow Version:", mlflow.version.VERSION)
         print("Tracking URI:", mlflow.tracking.get_tracking_uri())
         mlflow.set_experiment(f"{input_data['mlflow_parameters']['mlflow_experiment_name']}")
-
+           
+        # Setname
+        mlflow_run_prefix = input_data["mlflow_parameters"]["mlflow_run_prefix"]
+        
+        # Get the current date and time as a string
+        now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        
+        # Set mlflow run name
+        mlflow.set_tag("mlflow.runName", mlflow_run_prefix + "_" + str(now))
+        
         # create a plot directory
         os.system(f"mkdir -p {save_directory}/plots")
         os.system(f"mv {save_directory}/*png {save_directory}/*pdf {save_directory}/*eps  {save_directory}/plots")
@@ -815,16 +874,16 @@ if __name__ == "__main__":
 
         os.system(f"cp input.yaml {save_directory}/input.yaml")
 
-        from datetime import datetime
-
-        # Get the current date and time as a string
-        now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-
-        
         mlflow.log_metric("loss", loss_his[-1])
         mlflow.log_metric("train_time", model.total_train_time)
         mlflow.log_metric("time_per_iter", model.total_train_time/input_data["model_run_params"]["max_iter"])
         
+        # log the Errors
+        mlflow.log_metric("l2_error", l2_error)
+        mlflow.log_metric("l1_error", l1_error)
+        mlflow.log_metric("linf_error", linf_error)
+        
+
         mlflow.log_param("date", now)
 
         # Log the parameters from the YAML file
@@ -853,5 +912,3 @@ if __name__ == "__main__":
         mlflow.log_artifact(f"{save_directory}/input.yaml")
         mlflow.log_artifact(f"{save_directory}/models",artifact_path="models")
         mlflow.log_artifact(f"{save_directory}/solution_arrays",artifact_path="solution_arrays")
-            
-    

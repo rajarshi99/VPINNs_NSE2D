@@ -1,4 +1,3 @@
-# %%
 """
 @Title:
     hp-VPINNs: A General Framework For Solving PDEs
@@ -22,28 +21,24 @@ from GaussJacobiQuadRule_V3 import Jacobi, DJacobi, GaussLobattoJacobiWeights
 import time
 
 np.random.seed(1234)
-tf.random.set_seed(1234)
-
-tf.compat.v1.disable_eager_execution()
-
+tf.set_random_seed(1234)
 ###############################################################################
 ###############################################################################
 class VPINN:
-    def __init__(self, X_u_train, u_train, X_f_train,     f_train, X_quad,
-     W_quad, U_exact_total, F_exact_total,
-    gridx, gridy, N_testfcn, X_test, u_test, layers):
+    def __init__(self, X_u_train, u_train, X_f_train, f_train, X_quad, W_quad, U_exact_total, F_exact_total,\
+                 gridx, gridy, N_testfcn, X_test, u_test, layers):
 
-        self.x = X_u_train[:, 0:1]
-        self.y = X_u_train[:, 1:2]
+        self.x = X_u_train[:,0:1]
+        self.y = X_u_train[:,1:2]
         self.utrain = u_train
-        self.xquad = X_quad[:, 0:1]
-        self.yquad = X_quad[:, 1:2]
-        self.wquad = W_quad
-        self.xf = X_f_train[:, 0:1]
-        self.yf = X_f_train[:, 1:2]
+        self.xquad  = X_quad[:,0:1]
+        self.yquad  = X_quad[:,1:2]
+        self.wquad  = W_quad
+        self.xf = X_f_train[:,0:1]
+        self.yf = X_f_train[:,1:2]
         self.ftrain = f_train
-        self.xtest = X_test[:, 0:1]
-        self.ytest = X_test[:, 1:2]
+        self.xtest = X_test[:,0:1]
+        self.ytest = X_test[:,1:2]
         self.utest = u_test
         self.Nelementx = np.size(N_testfcn[0])
         self.Nelementy = np.size(N_testfcn[1])
@@ -55,16 +50,16 @@ class VPINN:
         self.layers = layers
         self.weights, self.biases, self.a = self.initialize_NN(layers)
         
-        self.x_tf     = tf.compat.v1.placeholder(tf.float64, shape=[None, self.x.shape[1]])
-        self.y_tf     = tf.compat.v1.placeholder(tf.float64, shape=[None, self.y.shape[1]])
-        self.u_tf     = tf.compat.v1.placeholder(tf.float64, shape=[None, self.utrain.shape[1]])
-        self.x_f_tf = tf.compat.v1.placeholder(tf.float64, shape=[None, self.xf.shape[1]])
-        self.y_f_tf = tf.compat.v1.placeholder(tf.float64, shape=[None, self.yf.shape[1]])
-        self.f_tf   = tf.compat.v1.placeholder(tf.float64, shape=[None, self.ftrain.shape[1]])
-        self.x_test = tf.compat.v1.placeholder(tf.float64, shape=[None, self.xtest.shape[1]])
-        self.y_test = tf.compat.v1.placeholder(tf.float64, shape=[None, self.ytest.shape[1]])
-        self.x_quad = tf.compat.v1.placeholder(tf.float64, shape=[None, self.xquad.shape[1]])
-        self.y_quad = tf.compat.v1.placeholder(tf.float64, shape=[None, self.yquad.shape[1]])
+        self.x_tf     = tf.placeholder(tf.float64, shape=[None, self.x.shape[1]])
+        self.y_tf     = tf.placeholder(tf.float64, shape=[None, self.y.shape[1]])
+        self.u_tf     = tf.placeholder(tf.float64, shape=[None, self.utrain.shape[1]])
+        self.x_f_tf = tf.placeholder(tf.float64, shape=[None, self.xf.shape[1]])
+        self.y_f_tf = tf.placeholder(tf.float64, shape=[None, self.yf.shape[1]])
+        self.f_tf   = tf.placeholder(tf.float64, shape=[None, self.ftrain.shape[1]])
+        self.x_test = tf.placeholder(tf.float64, shape=[None, self.xtest.shape[1]])
+        self.y_test = tf.placeholder(tf.float64, shape=[None, self.ytest.shape[1]])
+        self.x_quad = tf.placeholder(tf.float64, shape=[None, self.xquad.shape[1]])
+        self.y_quad = tf.placeholder(tf.float64, shape=[None, self.yquad.shape[1]])
                  
         self.u_pred_boundary = self.net_u(self.x_tf, self.y_tf)
         self.f_pred = self.net_f(self.x_f_tf, self.y_f_tf)
@@ -133,11 +128,11 @@ class VPINN:
         if scheme == 'PINNs':
             self.loss  = 10*self.lossb + self.lossp 
         
-        self.optimizer_Adam = tf.compat.v1.train.AdamOptimizer(0.001)
+        self.optimizer_Adam = tf.train.AdamOptimizer(0.001)
         self.train_op_Adam = self.optimizer_Adam.minimize(self.loss)
 #        self.sess = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
-        self.sess = tf.compat.v1.Session()
-        self.init = tf.compat.v1.global_variables_initializer()
+        self.sess = tf.Session()
+        self.init = tf.global_variables_initializer()
         self.sess.run(self.init)
         
 ###############################################################################
@@ -157,7 +152,7 @@ class VPINN:
         in_dim = size[0]
         out_dim = size[1]        
         xavier_stddev = np.sqrt(2/(in_dim + out_dim), dtype=np.float64)
-        return tf.Variable(tf.compat.v1.truncated_normal([in_dim, out_dim], stddev=xavier_stddev,dtype=tf.float64), dtype=tf.float64)
+        return tf.Variable(tf.truncated_normal([in_dim, out_dim], stddev=xavier_stddev,dtype=tf.float64), dtype=tf.float64)
  
     
     def neural_net(self, X, weights, biases, a):
@@ -291,8 +286,6 @@ if __name__ == "__main__":
     N_quad = 10
     N_bound = 80
     N_residual = 100    
-
-
     
 
     ###########################################################################
@@ -383,8 +376,7 @@ if __name__ == "__main__":
 
 #    N_testfcn_total = [(len(grid_x)-1)*[N_test_x], (len(grid_y)-1)*[N_test_y]]
     N_testfcn_total = [N_test_x, N_test_y]
-
-# %%
+ 
     #+++++++++++++++++++
     x_quad  = XY_quad_train[:,0:1]
     y_quad  = XY_quad_train[:,1:2]
@@ -439,7 +431,7 @@ if __name__ == "__main__":
                   U_ext_total, F_ext_total, grid_x, grid_y, N_testfcn_total, X_test, u_test, Net_layer)
     
     u_pred_his, loss_his = [], []
-    model.train(2000 + 1)
+    model.train(10000 + 1)
     u_pred = model.predict()
 
 #%%

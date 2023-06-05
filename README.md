@@ -1,6 +1,7 @@
 
 # [hp-VPINNs: Variational Physics Informed Neural Networks With Domain Decomposition]
 
+
 We introduce the variational physics informed neural networks – a general framework to solve differential equations.
 
 For more information, please refer to the following: 
@@ -25,3 +26,31 @@ For more information, please refer to the following:
     journal={arXiv preprint arXiv:1912.00873},
     year={2019}
   }
+
+
+## Installation and usage 
+
+Clone the code to you repo 
+
+### Setup a Venv
+
+Navigate into the directory using `cd` and then create a `venv`
+
+```
+cd VPINNS
+python3 -m venv .
+```
+
+Source the venv
+
+```
+source bin/activate
+```
+
+### Running the code
+
+Then run the code using
+
+```
+python3 main/SingularlyPerturbed/hp-VPINN-Singularly_perturbed_2D.py input.yaml
+```

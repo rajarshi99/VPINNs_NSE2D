@@ -3,18 +3,18 @@ bilinear_coefficients:
   bx: 0.0                                       # Advection Coefficient in x-direction
   by: 0.0                                       # Advection Coefficient in y-direction
   c: 0                                          # Reaction Coefficient
-  stab_param_tau: 0.21                          ## Global Stabilisation Parameter for SUPG
+  stab_param_tau: 0.1                          ## Global Stabilisation Parameter for SUPG
   boundary_loss_tau: 10.0                       # Boundary Loss Parameter (Tau) as mentioned in Paper
 
 model_run_params:
-  max_iter: 30000                              # Max iterations
+  max_iter: 10000                              # Max iterations
   NN_model:                                     # NN architecture
   - 2
   - 5
   - 5
   - 5
   - 1
-  var_form: "VarPINNs"                        # Accepted : VarPINNs, VarPINNs_SUPG
+  var_form: "VarPINNs_SUPG"                        # Accepted : VarPINNs, VarPINNs_SUPG
   boundary_loss_tau: 10.0                       # Boundary Loss Parameter (Tau) as mentioned in Paper
   num_quad_points: 10                          # Number of Quadrature Points for Loss Calculation
   num_bound_points: 160                         # Number of Boundary Points for Loss Calculation
@@ -24,18 +24,18 @@ model_run_params:
   num_shape_functions_x: 5                     # Number of Shape Functions in x-direction
   num_shape_functions_y: 5                     # Number of Shape Functions in y-direction
   learning_rate: 0.001                          # Learning Rate
-  
+  exact_solution_csv: exact_solutions/tempDistribution_supg.csv
 
 model_save_params:
   save_model: true                              # Save model or not
   save_frequency: 10000                          # Save model after every save_frequency iterations
-  save_directory: Output/SingularlyPerturbed/TempDist
+  save_directory: Output/SingularlyPerturbed/TempDist_SUPG
   save_name: SingularlyPerturbed
 
 mlflow_parameters:
   use_mlflow: true                                          # Use MLFlow or not
-  mlflow_experiment_name: SingularlyPerturbed_Experiments   # Name of the experiment
-  mlflow_run_prefix:  
+  mlflow_experiment_name: Temp_Distribution_Experiments   # Name of the experiment
+  mlflow_run_prefix:  temp_distribution_supg
 
 
 

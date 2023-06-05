@@ -24,6 +24,8 @@ import mlflow
 import yaml
 import os
 import sys
+from datetime import datetime
+from tqdm import tqdm
 
 np.random.seed(1234)
 tf.random.set_seed(1234)
@@ -57,12 +59,16 @@ class VPINN:
         self.input_data = input_data
         self.model_save_path = input_data["model_save_params"]['save_directory']
 
+        print("HP-VPINN is being initialized ...")
         # Track total time
         self.total_train_time = 0
         
         # Make directory for saving models
         if not os.path.exists(self.model_save_path + '/models'):
             os.makedirs(self.model_save_path + '/models')
+            
+        print("HP-VPINN is being initialized ...")
+        
 
         self.model_save_path = self.model_save_path + '/models'
        
@@ -79,6 +85,9 @@ class VPINN:
         self.y_test = tf.compat.v1.placeholder(tf.float64, shape=[None, self.ytest.shape[1]])
         self.x_quad = tf.compat.v1.placeholder(tf.float64, shape=[None, self.xquad.shape[1]])
         self.y_quad = tf.compat.v1.placeholder(tf.float64, shape=[None, self.yquad.shape[1]])
+        
+        print("HP-VPINN is being initialized 2...")
+        
                  
         self.u_pred_boundary = self.net_u(self.x_tf, self.y_tf)
         self.f_pred = self.net_f(self.x_f_tf, self.y_f_tf)
@@ -100,9 +109,15 @@ class VPINN:
         STAB_PARAM_TAU = tf.constant(self.stab_param_tau, dtype=tf.float64)  ## Global regularization parameter
         EPSILON = tf.constant(self.eps, dtype=tf.float64)  ## Singular perturbation parameter
         
+        print("Stab param tau: ", self.stab_param_tau)
+        tf.print("Stab param tau: ", STAB_PARAM_TAU)
+        
+        exit(0)
+        
         self.varloss_total = 0
         for ex in range(self.Nelementx):
             for ey in range(self.Nelementy):
+                
                 F_ext_element  = self.F_ext_total[ex, ey]
                 Ntest_elementx = N_testfcn[0][ex]
                 Ntest_elementy = N_testfcn[1][ey]
@@ -138,30 +153,30 @@ class VPINN:
 
                 if var_form == 1:
                     DUx_DVx        = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
-                                     self.wquad[:,0:1]*d1testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
+                                     self.wquad[:,0:1]*d1testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element*EPSILON) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
                     DUy_DVy = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
-                                    self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
+                                    self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element*EPSILON) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    Diffusion_Term = (DUx_DVx + DUy_DVy) * EPSILON
+                    Diffusion_Term = (DUx_DVx + DUy_DVy)
                     
                     # Function for Convection term
-                    DUx_V        = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
-                                     self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
+                    DUx_V        = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
+                                     self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element*B_x) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)    
                     
-                    DUy_V        = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
-                                     self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1yu_NN_quad_element) \
+                    DUy_V        = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
+                                     self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1yu_NN_quad_element*B_y) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
                     
-                    Convection_Term = B_x * DUx_V + B_y * DUy_V          
+                    Convection_Term = DUx_V +   DUy_V          
                     
                     ## Reaction Term
                     U_V  = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                    self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*u_NN_quad_element) \
+                                    self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*u_NN_quad_element*C) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
                     
-                    Reaction_Term = U_V * C
+                    Reaction_Term = U_V
                     
                     U_NN_element = Diffusion_Term + Convection_Term + Reaction_Term
                        
@@ -177,70 +192,74 @@ class VPINN:
                 ## Variational Form for SUPG
                 if var_form == 2:
                     DUx_DVx        = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
-                                     self.wquad[:,0:1]*d1testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
+                                     self.wquad[:,0:1]*d1testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element*EPSILON) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
                     DUy_DVy = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
-                                    self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
+                                    self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element*EPSILON) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    Diffusion_Term = (DUx_DVx + DUy_DVy) * EPSILON
+                    Diffusion_Term = (DUx_DVx + DUy_DVy)
                     
                     # Function for Convection term
-                    DUx_V        = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
-                                     self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
+                    DUx_V        = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
+                                     self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element*B_x) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)    
                     
-                    DUy_V        = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
-                                     self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1yu_NN_quad_element) \
+                    DUy_V        = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
+                                     self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*d1yu_NN_quad_element*B_y) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
                     
-                    Convection_Term = B_x * DUx_V + B_y * DUy_V
+                    Convection_Term = DUx_V +   DUy_V          
                     
                     ## Reaction Term
                     U_V  = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                    self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*u_NN_quad_element) \
+                                    self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*u_NN_quad_element*C) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
                     
-                    Reaction_Term = U_V * C
+                    Reaction_Term = U_V
                     
                     U_NN_element = Diffusion_Term + Convection_Term + Reaction_Term         
                     
                     
-                    ## ----- SUPG Diffusion Term ----- ##
-                    DDUx_V_BxDVx_ByDVy = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum( \
-                                        self.wquad[:,0:1]*self.wquad[:,1:2]*d2xu_NN_quad_element*testx_quad_element[r] * testy_quad_element[k] *  \
-                                        ( (B_x * d1testx_quad_element[r] * testy_quad_element[k])  + (B_y * d1testy_quad_element[k] * testx_quad_element[r]) ) )\
+                    ## ----- SUPG Test Function  (b.Grad(v)) ----- ##
+                    SUPG_Diffusion_term_x = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
+                                            self.wquad[:,0:1]*d1testx_quad_element[r]*self.wquad[:,1:2]*testy_quad_element[k]*(d2xu_NN_quad_element + d2yu_NN_quad_element) * -EPSILON )\
+                                            for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
+                    
+                    SUPG_Diffusion_term_y = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                                            self.wquad[:,0:1]*testx_quad_element[r]*self.wquad[:,1:2]*d1testy_quad_element[k]*(d2xu_NN_quad_element + d2yu_NN_quad_element) * -EPSILON )\
+                                            for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
+                    
+                    
+                    SUPG_Diffusion_term = SUPG_Diffusion_term_x + SUPG_Diffusion_term_y
+                    
+                    SUPG_Convection_term_x = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
+                                            self.wquad[:,0:1]*self.wquad[:,1:2]*(testy_quad_element[k]*d1testx_quad_element[r]*B_x) *  \
+                                            (B_x * d1xu_NN_quad_element + B_y * d1yu_NN_quad_element) )
+                                            for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
+                    
+                    SUPG_Convection_term_y = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                                             self.wquad[:,0:1]*self.wquad[:,1:2]*(testx_quad_element[r]*d1testy_quad_element[k]*B_y) *  \
+                                            (B_x * d1xu_NN_quad_element + B_y * d1yu_NN_quad_element) )
+                                            for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
+                    
+                    SUPG_Convection_term = SUPG_Convection_term_x + SUPG_Convection_term_y
+                    
+                    
+                    SUPG_Reaction_term_x = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
+                                         self.wquad[:,0:1]*self.wquad[:,1:2]*(testy_quad_element[k]*d1testx_quad_element[r]*B_x) *  \
+                                        (u_NN_quad_element*C) )
                                         for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
 
-                    DDUy_V_BxDVx_ByDVy = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum( \
-                                        self.wquad[:,0:1]*self.wquad[:,1:2]*d2yu_NN_quad_element*testx_quad_element[r] * testy_quad_element[k] *  \
-                                        ( (B_x * d1testx_quad_element[r] * testy_quad_element[k])  + (B_y * d1testy_quad_element[k] * testx_quad_element[r]) ) )\
-                                        for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    
-                    SUPG_Diffusion_Term = (DDUx_V_BxDVx_ByDVy + DDUy_V_BxDVx_ByDVy) * -1.0 * EPSILON
-                    
-                    ## ----- SUPG Convection Term ----- ##
-                    
-                    SUPG_Convection_Term = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum( \
-                                           self.wquad[:,0:1]*self.wquad[:,1:2] * \
-                                           (B_x * d1xu_NN_quad_element + B_y * d1yu_NN_quad_element) * \
-                                           ((B_x * d1testx_quad_element[r] * testy_quad_element[k])  + (B_y * d1testy_quad_element[k] * testx_quad_element[r]) ) ) 
-                                             for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                                                               
+                    SUPG_Reaction_term_y = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                                            self.wquad[:,0:1]*self.wquad[:,1:2]*(testx_quad_element[r]*d1testy_quad_element[k]*B_y) *  \
+                                            (u_NN_quad_element*C) )
+                                            for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
 
-                    ## --- Reaction Term --- ##
                     
-                    SUPG_Reaction_Term = tf.convert_to_tensor([[jacobian*tf.reduce_sum( \
-                                          self.wquad[:,0:1]*self.wquad[:,1:2] * \
-                                          C * u_NN_quad_element * \
-                                          ((B_x * d1testx_quad_element[r] * testy_quad_element[k])  + (B_y * d1testy_quad_element[k] * testx_quad_element[r]) ) ) 
-                                          for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    
-                    
-                    
-                    SUPG_Combined = STAB_PARAM_TAU*(SUPG_Diffusion_Term + SUPG_Convection_Term + SUPG_Reaction_Term)
-                    
-                    U_NN_element = U_NN_element + SUPG_Combined
-                
+                    SUPG_Reaction_term = SUPG_Reaction_term_x + SUPG_Reaction_term_y
+                                            
+                                            
+                U_NN_element = U_NN_element + (SUPG_Diffusion_term + SUPG_Convection_term + SUPG_Reaction_term)*STAB_PARAM_TAU
                 
                 Res_NN_element = tf.reshape(U_NN_element - F_ext_element, [1,-1]) 
                 # Res_NN_element = tf.reshape(U_NN_element, [1,-1]) 
@@ -264,6 +283,7 @@ class VPINN:
         self.sess = tf.compat.v1.Session()
         self.init = tf.compat.v1.global_variables_initializer()
         self.sess.run(self.init)
+    
         
 ###############################################################################
     def initialize_NN(self, layers):        
@@ -373,6 +393,8 @@ class VPINN:
                    self.x_test: self.xtest, self.y_test: self.ytest,
                    self.x_f_tf: self.xf, self.y_f_tf: self.yf}
 
+        progress_bar = tqdm(total=nIter, desc='Training', unit='epoch', bar_format="{l_bar}{bar:30}{r_bar}{bar:-10b}", colour="blue", ncols=100)
+        
         start_time = time.time()
         for it in range(nIter):
             self.sess.run(self.train_op_Adam, tf_dict)
@@ -386,10 +408,13 @@ class VPINN:
                 elapsed = time.time() - start_time
                 self.total_train_time += elapsed
                 str_print = ''.join(['It: %d, Loss: %.3e, Time: %.2f'])
-                print(str_print % (it, loss_value, elapsed))
+                print("\n" + str_print % (it, loss_value, elapsed))
                 start_time = time.time()
             if it % self.input_data["model_save_params"]["save_frequency"] == 0:
                 self.save_model(self.model_save_path,it)
+                
+            progress_bar.set_postfix({'train_loss': loss_value})
+            progress_bar.update(1)
         
         self.save_model(self.model_save_path,it)
 
@@ -424,10 +449,9 @@ if __name__ == "__main__":
         exit(0)
     
     # Read the input yaml file
-    # with open(sys.argv[1], 'r') as f:
-    #     input_data = yaml.safe_load(f)
-    with open("input.yaml", 'r') as f:
+    with open(sys.argv[1], 'r') as f:
         input_data = yaml.safe_load(f)
+   
     
     save_directory = input_data["model_save_params"]["save_directory"]
 
@@ -448,7 +472,7 @@ if __name__ == "__main__":
 
     max_iter = input_data["model_run_params"]["max_iter"]
     
-    
+
     # Assign BX and By
     b_x = input_data["bilinear_coefficients"]['bx']
     b_y = input_data["bilinear_coefficients"]['by']
@@ -502,28 +526,44 @@ if __name__ == "__main__":
     omegax = 2*np.pi
     omegay = 2*np.pi
     r1 = 10
+    
+    # Read the csv file and save the exact Solution
+    output_file = input_data["model_run_params"]["exact_solution_csv"]
+    exact_solution = np.genfromtxt(output_file, delimiter=',')
+    
 
-    ## For all the funcitons, the values are calculated by multiplying the incoming variables to preserve the shape.
-
+    ## For u_ext and f_ext, the values are calculated by multiplying the incoming variables to preserve the shape.
+    # Function which stores the exact solution , So it will be used to obtain boundary values also
+    # For now, use the below for boundary and use the `u_exact` for computing loss
     def u_ext(x, y):
-        # utemp = (0.1*np.sin(omegax*x) + np.tanh(r1*x)) * np.sin(omegay*(y))
-        #Using np.isclose, if y is close to 1, then utemp = 0
-        # if np.allclose(y, 1.0, 1e-6):
-        #     utemp = np.ones_like(x)
-        # else:
-        #     utemp = np.zeros_like(x)
-        utemp = x*0.0 
+        # Check if the given arrays x and y are arrays or just single elements
+        if np.isscalar(x) and np.isscalar(y):
+            # If both x and y are single elements, assign the value of u_temp based on the value of y
+            if np.isclose(y, 1):
+                utemp = 1.0
+            else:
+                utemp = 0
+        else:
+            # If either x or y is an array, assign the value of u_temp based on the values of y
+            utemp = np.zeros_like(y)
+            utemp[np.isclose(y, 1)] = 1.0
         return utemp
     
-    def u_boundary(x,y):
-
-        return x*0.0
-
+    # The Exact Solution Needs to be loaded from an external File for computing the solution 
+    # assume that the exact solution is stored in the `exact_solution` numpy array
+    def u_exact(x, y):
+        # return the last column of the exact_solution Array
+        return exact_solution[:,-1].reshape(-1,1)
+        
+    
+    
     def f_ext(x,y):
         # gtemp = (-0.1*(omegax**2)*np.sin(omegax*x) - (2*r1**2)*(np.tanh(r1*x))/((np.cosh(r1*x))**2))*np.sin(omegay*(y))\
                 # +(0.1*np.sin(omegax*x) + np.tanh(r1*x)) * (-omegay**2 * np.sin(omegay*(y)) )
         gtemp = x*0.0 + 1.0
         return gtemp
+
+    
     
     ###########################################################################
     # Boundary points
@@ -603,6 +643,7 @@ if __name__ == "__main__":
     U_ext_total = []
     F_ext_total = []
     
+
     
     # %%
     
@@ -614,6 +655,8 @@ if __name__ == "__main__":
             x_quad_element = grid_x[ex] + (grid_x[ex+1]-grid_x[ex])/2*(x_quad+1)
             y_quad_element = grid_y[ey] + (grid_y[ey+1]-grid_y[ey])/2*(y_quad+1)
             jacobian       = ((grid_x[ex+1]-grid_x[ex])/2)*((grid_y[ey+1]-grid_y[ey])/2)
+            jacobian_x     = ((grid_x[ex+1]-grid_x[ex])/2)
+            jacobian_y     = ((grid_y[ey+1]-grid_y[ey])/2)
             
             testx_quad_element = np.asarray([ Test_fcn_x(n,x_quad)  for n in range(1, Ntest_elementx+1)])
 
@@ -635,18 +678,30 @@ if __name__ == "__main__":
                                 w_quad[:,0:1]*testx_quad_element[r]*w_quad[:,1:2]*testy_quad_element[k]*f_quad_element) \
                                 for r in range(Ntest_elementx)] for k in range(Ntest_elementy)])
             
-            if var_form == 2:
-                ## SUPG form
+            if var_form == 2: ## SUPG form
+                
                 F_ext_element_normal = np.asarray([[jacobian*np.sum(\
                                 w_quad[:,0:1]*testx_quad_element[r]*w_quad[:,1:2]*testy_quad_element[k]*f_quad_element) \
                                 for r in range(Ntest_elementx)] for k in range(Ntest_elementy)])
-
-                F_ext_element_SUPG = np.asarray([[jacobian*np.sum(\
-                                w_quad[:,0:1]*w_quad[:,1:2]*f_quad_element *  \
-                                ( (b_x* d1testx_quad_element[r] * testy_quad_element[k])  + (b_y * d1testy_quad_element[k] * testx_quad_element[r]) ) ) 
+                
+                ## ----- SUPG Test Function  (b.Grad(v)) ----- ##
+                TestFunction_x = np.asarray([[jacobian/jacobian_x*np.sum(\
+                                w_quad[:,0:1]*w_quad[:,1:2]*
+                                (f_quad_element * b_x *d1testx_quad_element[r] * testy_quad_element[k])) \
                                 for r in range(Ntest_elementx)] for k in range(Ntest_elementy)])
-            
-                F_ext_element = F_ext_element_normal + stab_param_tau * F_ext_element_SUPG
+
+                TestFunction_y = np.asarray([[jacobian/jacobian_y*np.sum(\
+                                w_quad[:,0:1]*w_quad[:,1:2]*
+                                (f_quad_element * b_y *testx_quad_element[r] * d1testy_quad_element[k])) \
+                                for r in range(Ntest_elementx)] for k in range(Ntest_elementy)])
+                
+                SUPG_test_function = TestFunction_x + TestFunction_y
+                
+                
+                ## SUPG RHS 
+                F_ext_element_SUPG =  stab_param_tau * SUPG_test_function
+                
+                F_ext_element = F_ext_element_normal +  F_ext_element_SUPG
             U_ext_total.append(U_ext_element)
     
             F_ext_total.append(F_ext_element)
@@ -654,23 +709,32 @@ if __name__ == "__main__":
 #    U_ext_total = np.reshape(U_ext_total, [NE_x, NE_y, N_test_y, N_test_x])
     F_ext_total = np.reshape(F_ext_total, [NE_x, NE_y, N_test_y[0], N_test_x[0]])
     
+
     ###########################################################################
     # Test points
     delta_test = 0.01
     xtest = np.arange(x_l, x_r + delta_test, delta_test)
     ytest = np.arange(y_l, y_u + delta_test, delta_test)
-    data_temp = np.asarray([[ [xtest[i],ytest[j],u_ext(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))])
+    
+    # Thivin - Data_temp is modified to not to compute exact value using the given function
+    data_temp = np.asarray([[ [xtest[i],ytest[j],0.0] for i in range(len(xtest))] for j in range(len(ytest))])
+    
     Xtest = data_temp.flatten()[0::3]
     Ytest = data_temp.flatten()[1::3]
-    Exact = data_temp.flatten()[2::3]
+    #  Exact = data_temp.flatten()[2::3]   # Thivin -- removed to read from external file
+    Exact = u_exact(Xtest, Xtest)
+    
     X_test = np.hstack((Xtest[:,None],Ytest[:,None]))
     u_test = Exact[:,None]
+    
+    
 
 
     ###########################################################################
     model = VPINN(X_u_train, u_train, X_f_train, f_train, XY_quad_train, WXY_quad_train,\
                   U_ext_total, F_ext_total, grid_x, grid_y, N_testfcn_total, X_test, u_test, Net_layer,input_data)
     
+
     u_pred_his, loss_his = [], []
     model.train(max_iter + 1)
     u_pred = model.predict()
@@ -689,6 +753,7 @@ if __name__ == "__main__":
     plt.rcParams['legend.fontsize'] = 20
     plt.rcParams['ytick.labelsize'] = 20
     plt.rcParams['axes.labelsize'] = 20
+    plt.rcParams['axes.titlesize'] = 20
     plt.rcParams['font.size'] = 20
     plt.rcParams['axes.prop_cycle'] = cycler(color=['darkblue', '#d62728', '#2ca02c', '#ff7f0e', '#bcbd22', '#8c564b', '#17becf', '#9467bd', '#e377c2', '#7f7f7f'])
 
@@ -723,15 +788,15 @@ if __name__ == "__main__":
         plt.axhline(1, linewidth=1, linestyle='--', color='k')
         plt.axvline(-1, linewidth=1, linestyle='--', color='k')
         plt.axvline(1, linewidth=1, linestyle='--', color='k')
-    plt.xlim([-1.1,1.1])
-    plt.ylim([-1.1,1.1])
+    plt.xlim([-0.1,1.1])
+    plt.ylim([-0.1,1.])
     plt.xlabel(r'$x$')
     plt.ylabel(r'$y$')
     #ax.set_aspect(1)
     ax.locator_params(nbins=5)
     plt.tick_params()
     #fig.tight_layout()
-    fig.set_size_inches(w=11,h=11)
+    fig.set_size_inches(w=6.4, h=4.8)
     plt.title(r'Boundary Points for $\epsilon$ = %s' % (input_data["bilinear_coefficients"]['eps']))
     plt.savefig(f"{save_directory}/training_points.png", dpi=300, bbox_inches='tight')
     plt.savefig(f"{save_directory}/training_points.eps", dpi=300, bbox_inches='tight')
@@ -747,7 +812,7 @@ if __name__ == "__main__":
 
     fig_ext, ax_ext = plt.subplots(constrained_layout=True, figsize=(6.4, 4.8))
     CS_ext = ax_ext.contourf(x_test_plot, y_test_plot, u_test_plot, 100, cmap='jet', origin='lower')
-    cbar = fig_ext.colorbar(CS_ext, shrink=0.67)
+    cbar = fig_ext.colorbar(CS_ext, shrink=0.85)
     cbar.ax.tick_params()
     ax_ext.locator_params(nbins=8)
     ax_ext.set_xlabel('$x$')
@@ -764,7 +829,7 @@ if __name__ == "__main__":
     
     fig_pred, ax_pred = plt.subplots(constrained_layout=True, figsize=(6.4, 4.8))
     CS_pred = ax_pred.contourf(x_test_plot, y_test_plot, u_pred_plot, 100, cmap='jet', origin='lower')
-    cbar = fig_pred.colorbar(CS_pred, shrink=0.67)
+    cbar = fig_pred.colorbar(CS_pred, shrink=0.85)
     cbar.ax.tick_params()
     ax_pred.locator_params(nbins=8)
     ax_pred.set_xlabel('$x$')
@@ -772,7 +837,7 @@ if __name__ == "__main__":
     plt.tick_params( )
     ax_pred.set_aspect(1)
     #fig.tight_layout()
-    fig_pred.set_size_inches(w=11,h=11)
+    fig_pred.set_size_inches(w=6.4, h=4.8)
     plt.title(r'Predicted Solution for $\epsilon$ = %s' % (input_data["bilinear_coefficients"]['eps']))
     plt.savefig(f"{save_directory}/Predicted_Solution.png", dpi=300, bbox_inches='tight')
     plt.savefig(f"{save_directory}/Predicted_Solution.eps", dpi=300, bbox_inches='tight')
@@ -781,7 +846,7 @@ if __name__ == "__main__":
     
     fig_err, ax_err = plt.subplots(constrained_layout=True, figsize=(6.4, 4.8))
     CS_err = ax_err.contourf(x_test_plot, y_test_plot, abs(u_test_plot - u_pred_plot), 100, cmap='jet', origin='lower')
-    cbar = fig_err.colorbar(CS_err, shrink=0.65, format="%.4f")
+    cbar = fig_err.colorbar(CS_err, shrink=0.85, format="%.4f")
     cbar.ax.tick_params()
     ax_err.locator_params(nbins=8)
     ax_err.set_xlabel('$x$')
@@ -789,7 +854,7 @@ if __name__ == "__main__":
     plt.tick_params( )
     ax_err.set_aspect(1)
     #fig.tight_layout()
-    fig_err.set_size_inches(w=11,h=11)
+    fig_err.set_size_inches(w=6.4, h=4.8)
     plt.title(r'Absolute Error for $\epsilon$ = %s' % (input_data["bilinear_coefficients"]['eps']))
     plt.savefig(f"{save_directory}/Absolute_Error.png", dpi=300, bbox_inches='tight')
     plt.savefig(f"{save_directory}/Absolute_Error.eps", dpi=300, bbox_inches='tight')
@@ -799,12 +864,45 @@ if __name__ == "__main__":
     # Save the x_test_plot, y_test_plot, u_test_plot, u_pred_plot
     np.savez(f"{save_directory}/data.npz", x_test_plot=x_test_plot, y_test_plot=y_test_plot, u_test_plot=u_test_plot, u_pred_plot=u_pred_plot)
     
+
+    # Compute the Error Between predicted and the actual 
+    l2_error = np.linalg.norm(u_test_plot - u_pred_plot, 2)/np.linalg.norm(u_test_plot, 2)
+    l1_error = np.linalg.norm(u_test_plot - u_pred_plot, 1)/np.linalg.norm(u_test_plot, 1)
+    linf_error = np.linalg.norm(u_test_plot - u_pred_plot, np.inf)/np.linalg.norm(u_test_plot, np.inf)
+
+    # Print all the Errors 
+    print("-" * 82)
+    print(f"| {'Summary of Training':^78} |")
+    print("-" * 82)
+    print(f"| {'Parameter':<20} | {'Value':<55} |")
+    print("|" + "-" * 80 + "|")
+    print(f"| {'L2 Error':<20} | {l2_error:<55} |")
+    print(f"| {'L1 Error':<20} | {l1_error:<55} |")
+    print(f"| {'Linf Error':<20} | {linf_error:<55} |")
+    print(f"| {'Train Loss':<20} | {loss_his[-1]:<55} |")
+    print(f"| {'Train Time':<20} | {model.total_train_time:<55} |")
+    print("-" * 82)
+    
+    
+    
+    
+    
+
     # if use mlflow
     if input_data['mlflow_parameters']['use_mlflow']:
         print("MLflow Version:", mlflow.version.VERSION)
         print("Tracking URI:", mlflow.tracking.get_tracking_uri())
         mlflow.set_experiment(f"{input_data['mlflow_parameters']['mlflow_experiment_name']}")
-
+           
+        # Setname
+        mlflow_run_prefix = input_data["mlflow_parameters"]["mlflow_run_prefix"]
+        
+        # Get the current date and time as a string
+        now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        
+        # Set mlflow run name
+        mlflow.set_tag("mlflow.runName", mlflow_run_prefix + "_" + str(now))
+        
         # create a plot directory
         os.system(f"mkdir -p {save_directory}/plots")
         os.system(f"mv {save_directory}/*png {save_directory}/*pdf {save_directory}/*eps  {save_directory}/plots")
@@ -815,16 +913,16 @@ if __name__ == "__main__":
 
         os.system(f"cp input.yaml {save_directory}/input.yaml")
 
-        from datetime import datetime
-
-        # Get the current date and time as a string
-        now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-
-        
         mlflow.log_metric("loss", loss_his[-1])
         mlflow.log_metric("train_time", model.total_train_time)
         mlflow.log_metric("time_per_iter", model.total_train_time/input_data["model_run_params"]["max_iter"])
         
+        # log the Errors
+        mlflow.log_metric("l2_error", l2_error)
+        mlflow.log_metric("l1_error", l1_error)
+        mlflow.log_metric("linf_error", linf_error)
+        
+
         mlflow.log_param("date", now)
 
         # Log the parameters from the YAML file
@@ -853,5 +951,3 @@ if __name__ == "__main__":
         mlflow.log_artifact(f"{save_directory}/input.yaml")
         mlflow.log_artifact(f"{save_directory}/models",artifact_path="models")
         mlflow.log_artifact(f"{save_directory}/solution_arrays",artifact_path="solution_arrays")
-            
-    

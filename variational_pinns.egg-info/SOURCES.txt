@@ -1,7 +1,0 @@
-README.md
-setup.py
-variational_pinns.egg-info/PKG-INFO
-variational_pinns.egg-info/SOURCES.txt
-variational_pinns.egg-info/dependency_links.txt
-variational_pinns.egg-info/requires.txt
-variational_pinns.egg-info/top_level.txt
