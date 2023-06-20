@@ -6,3 +6,5 @@ mlruns/
 bin/
 pyenv.config
 main/.vscode/
+*.png
+*.pdf
