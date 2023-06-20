@@ -4,3 +4,5 @@ lib64/
 Output/
 mlruns/
 bin/
+pyenv.config
+main/.vscode/
