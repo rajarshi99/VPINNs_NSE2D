@@ -54,12 +54,13 @@ def get_variable_info(variable):
 ###############################################################################
 # %%
 class VPINN:
-    def __init__(self, coord_bound_train, c_bound_train, coord_train_force, f_train, coord_quad_train, quad_weight_train, c_bound_total, F_exact_total,\
-                 gridx, gridy, num_total_testfunc,coord_test, c_test, layers):
+    def __init__(self, coord_bound_train, u_bound_train, v_bound_train, coord_train_force, f_1_train, f_2_train, coord_quad_train, quad_weight_train, F_1_exact_total, F_2_exact_total,\
+                 gridx, gridy, num_total_testfunc,coord_test, u_test,v_test,p_test, layers):
 
-        self.x_bound = coord_bound_train[:,0:1] # boundary points in x direction. Data type: numpy.ndarray, Size: (N_bound,1)
-        self.y_bound = coord_bound_train[:,1:2] # boundary points in y direction. Data type: numpy.ndarray, Size: (N_bound,1)
-        self.c_bound = c_bound_train            # boundary values. Data type: numpy.ndarray, Size: (N_bound,1)
+        self.x_bound = coord_bound_train[:,0:1] # boundary points in x direction. Data type: numpy.ndarray, Size: (4*N_bound,1)
+        self.y_bound = coord_bound_train[:,1:2] # boundary points in y direction. Data type: numpy.ndarray, Size: (4*N_bound,1)
+        self.u_bound = u_bound_train            # boundary values. Data type: numpy.ndarray, Size: (4*N_bound,1)
+        self.v_bound = v_bound_train            # boundary values. Data type: numpy.ndarray, Size: (4*N_bound,1)
 
         self.x_quad  = coord_quad_train[:,0:1] # quadrature points in x direction. Data type: numpy.ndarray, Size: (N_quad*N_quad,1)
         self.y_quad  = coord_quad_train[:,1:2] # quadrature points in y direction. Data type: numpy.ndarray, Size: (N_quad*N_quad,1)
@@ -67,63 +68,68 @@ class VPINN:
 
         self.x_f = coord_train_force[:,0:1]    # force sampling points in x direction. Data type: numpy.ndarray, Size: (N_force,1)
         self.y_f = coord_train_force[:,1:2]    # force sampling points in y direction. Data type: numpy.ndarray, Size: (N_force,1)
-        self.ftrain = f_train                  # force values. Data type: numpy.ndarray, Size: (N_force,1)
+        self.f1train = f_1_train                  # force values. Data type: numpy.ndarray, Size: (N_force,1)
 
-        self.x_test = coord_test[:,0:1]         # test points in x direction. Data type: numpy.ndarray, Size: (N_test,1)
-        self.y_test = coord_test[:,1:2]         # test points in y direction. Data type: numpy.ndarray, Size: (N_test,1)
-        self.test_c = c_test                    # test values. Data type: numpy.ndarray, Size: (N_test,1)
+        self.f2train = f_2_train                  # force values. Data type: numpy.ndarray, Size: (N_force,1)
+
+        self.x_test = coord_test[:,0:1]         # test points in x direction. Data type: numpy.ndarray, Size: (N_test*N_test,1)
+        self.y_test = coord_test[:,1:2]         # test points in y direction. Data type: numpy.ndarray, Size: (N_test*N_test,1)
+        self.test_u = u_test                    # test values. Data type: numpy.ndarray, Size: (N_test*N_test,1)
+        self.test_v = v_test                    # test values. Data type: numpy.ndarray, Size: (N_test*N_test,1)
+        self.test_p = p_test                    # test values. Data type: numpy.ndarray, Size: (N_test*N_test,1)
 
         self.num_element_x = np.size(num_total_testfunc[0]) # number of elements in x direction. Data type: int, Size: (1)
         self.num_element_y = np.size(num_total_testfunc[1])  # number of elements in y direction. Data type: int, Size: (1)
         self.num_test_x = num_total_testfunc[0][0]          # number of test functions in x direction. Data type: int, Size: (1)
         self.num_test_y = num_total_testfunc[1][0]          # number of test functions in y direction. Data type: int, Size: (1)
 
-        self.total_c_bound = c_bound_total                        # boundary values. Data type: numpy.ndarray, Size: (N_bound,1)
-        self.F_ext_total = F_exact_total                    # exact force values. Data type: numpy.ndarray, Size: (N_bound,1)
+        self.F_1_ext_total = F_1_exact_total                    # exact force values. Data type: numpy.ndarray, Size: (N_bound,1)
+        self.F_2_ext_total = F_2_exact_total                    # exact force values. Data type: numpy.ndarray, Size: (N_bound,1)
+
        
-        
-    
         self.layers = layers                                # neural network structure. Data type: list, Size: (num_layers+1,1)
         self.weights, self.biases, self.a = self.initialize_NN(layers) # initialize the weights and biases of the neural network
         
-        self.x_bound_tensor     = tf.placeholder(tf.float64, shape=[None, self.x_bound.shape[1]]) # boundary points in x direction. Data type: tf.placeholder, Size: (N_bound,1)
-        self.y_bound_tensor     = tf.placeholder(tf.float64, shape=[None, self.y_bound.shape[1]]) # boundary points in y direction. Data type: tf.placeholder, Size: (N_bound,1)
+        self.x_bound_tensor     = tf.placeholder(tf.float64, shape=[None, self.x_bound.shape[1]]) # boundary points in x direction. Data type: tf.placeholder, Size: (4*N_bound,1)
+        self.y_bound_tensor     = tf.placeholder(tf.float64, shape=[None, self.y_bound.shape[1]]) # boundary points in y direction. Data type: tf.placeholder, Size: (4*N_bound,1)
 
-        self.c_bound_tensor     = tf.placeholder(tf.float64, shape=[None, self.c_bound.shape[1]]) # boundary values. Data type: tf.placeholder, Size: (N_bound,1)
+        self.u_bound_tensor     = tf.placeholder(tf.float64, shape=[None, self.u_bound.shape[1]]) # boundary values. Data type: tf.placeholder, Size: (4*N_bound,1)
+        self.v_bound_tensor     = tf.placeholder(tf.float64, shape=[None, self.v_bound.shape[1]]) # boundary values. Data type: tf.placeholder, Size: (4*N_bound,1)
 
         self.x_force_tensor = tf.placeholder(tf.float64, shape=[None, self.x_f.shape[1]]) # force sampling points in x direction. Data type: tf.placeholder, Size: (N_force,1)
         self.y_force_tensor = tf.placeholder(tf.float64, shape=[None, self.y_f.shape[1]]) # force sampling points in y direction. Data type: tf.placeholder, Size: (N_force,1)
 
-        self.force_tensor   = tf.placeholder(tf.float64, shape=[None, self.ftrain.shape[1]]) # force values. Data type: tf.placeholder, Size: (N_force,1)
+        self.force_1_tensor   = tf.placeholder(tf.float64, shape=[None, self.f1train.shape[1]]) # force values. Data type: tf.placeholder, Size: (N_force,1)
+        self.force_2_tensor   = tf.placeholder(tf.float64, shape=[None, self.f2train.shape[1]]) # force values. Data type: tf.placeholder, Size: (N_force,1)
 
         self.x_test_tensor = tf.placeholder(tf.float64, shape=[None, self.x_test.shape[1]]) # test points in x direction. Data type: tf.placeholder, Size: (N_test,1)
         self.y_test_tensor = tf.placeholder(tf.float64, shape=[None, self.y_test.shape[1]]) # test points in y direction. Data type: tf.placeholder, Size: (N_test,1)
         self.x_quad_tensor = tf.placeholder(tf.float64, shape=[None, self.x_quad.shape[1]]) # quadrature points in x direction. Data type: tf.placeholder, Size: (N_quad,1)
         self.y_quad_tensor = tf.placeholder(tf.float64, shape=[None, self.y_quad.shape[1]]) # quadrature points in y direction. Data type: tf.placeholder, Size: (N_quad,1)
 
+
+
         self.sess = tf.Session() # initialize the tensorflow session
         
-        eps = 1e-4 # diffusion coefficient. Data type: float, Size: (1)
+        self.mew = 1.0
 
-
- 
-        b_x = 1.0 # advection velocity in x direction. Data type: float, Size: (1)
-
-             
-        b_y = 0.0 # advection velocity in y direction. Data type: float, Size: (1)
-
-        tau = 0.1 # SUPG stabilization parameter. Data type: float, Size: (1)
-
+        #check
         self.u_pred_boundary = self.net_u(self.x_bound_tensor, self.y_bound_tensor)                 # predicted values at the boundary points. Data type: tf.tensor, Size: (N_bound,1)
+        self.v_pred_boundary = self.net_v(self.x_bound_tensor, self.y_bound_tensor)                 # predicted values at the boundary points. Data type: tf.tensor, Size: (N_bound,1)
         self.f_pred = self.net_f(self.x_force_tensor, self.y_force_tensor)                          # predicted values at the force sampling points. Data type: tf.tensor, Size: (N_force,1)
-        self.c_test = self.net_u(self.x_test, self.y_test)                                          # predicted values at the test points. Data type: tf.tensor, Size: (N_test,1)
+        self.u_test = self.net_u(self.x_test, self.y_test)                                          # predicted values at the test points. Data type: tf.tensor, Size: (N_test,1)
+        self.v_test = self.net_v(self.x_test, self.y_test)                                          # predicted values at the test points. Data type: tf.tensor, Size: (N_test,1)
+        self.p_test = self.net_p(self.x_test, self.y_test)                                           # predicted values at the test points. Data type: tf.tensor, Size: (N_test,1)
+    
         
         self.varloss_total = 0 # initialize the variational loss 
         
         for ex in range(self.num_element_x): # loop over the elements in x direction
             for ey in range(self.num_element_y): # loop over the elements in y direction
 
-                F_ext_element  = self.F_ext_total[ex, ey]   # exact force values. Data type: numpy.ndarray, Size: (1,1)
+                F_1_ext_element  = self.F_1_ext_total[ex, ey]   # exact force values. Data type: numpy.ndarray, Size: (1,1)
+                F_2_ext_element  = self.F_2_ext_total[ex, ey]   # exact force values. Data type: numpy.ndarray, Size: (1,1)
+
                 Ntest_elementx = num_total_testfunc[0][ex]  # number of test functions in x direction. Data type: int, Size: (1)
                 Ntest_elementy = num_total_testfunc[1][ey]  # number of test functions in y direction. Data type: int, Size: (1)
 
@@ -135,103 +141,80 @@ class VPINN:
                 jacobian       = ((gridx[ex+1]-gridx[ex])/2)*((gridy[ey+1]-gridy[ey])/2)            # jacobian. Data type: float, Size: (1)
                 
                 u_NN_quad_element = self.net_u(x_quad_element, y_quad_element)                      # predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
-
+                v_NN_quad_element = self.net_v(x_quad_element, y_quad_element)                      # predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+                p_NN_quad_element = self.net_p(x_quad_element, y_quad_element)                      # predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
 
 
                 d1xu_NN_quad_element, d2xu_NN_quad_element = self.net_dxu(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
                 d1yu_NN_quad_element, d2yu_NN_quad_element = self.net_dyu(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
-                                
+                d1xv_NN_quad_element, d2xv_NN_quad_element = self.net_dxv(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+                d1yv_NN_quad_element, d2yv_NN_quad_element = self.net_dyv(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+
+
                 testx_quad_element = self.Test_fcnx(Ntest_elementx, self.x_quad)                              # test functions in x direction. Data type: numpy.ndarray, Size: (Ntest_elementx,N_quad)
                 d1testx_quad_element, d2testx_quad_element = self.grad_test_func(Ntest_elementx, self.x_quad) # first and second derivatives of the test functions in x direction. Data type: numpy.ndarray, Size: (Ntest_elementx,N_quad)
                 testy_quad_element = self.Test_fcny(Ntest_elementy, self.y_quad)                              # test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
                 d1testy_quad_element, d2testy_quad_element = self.grad_test_func(Ntest_elementy, self.y_quad) # first and second derivatives of the test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
+
+
                 
     
-                integrand_1 = d2xu_NN_quad_element + d2yu_NN_quad_element
-                
-                if var_form == 0:
-                    U_NN_element = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*integrand_1) \
-                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-
-                if var_form == 1:
-                    U_NN_element_1 = tf.convert_to_tensor([[(jacobian/jacobian_x)*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) +\
-                                    (jacobian/jacobian_y)*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) +
-                                    jacobian*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element)
-                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    # U_NN_element_2 = tf.convert_to_tensor([[(jacobian/jacobian_y)*tf.reduce_sum(\
-                    #                 self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
-                    #                 for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    # U_NN_element = -1.0 * (U_NN_element_1 + U_NN_element_2 ) * self.diffConst
-                    U_NN_element = 1.0 * (U_NN_element_1) 
-                    
-
-    
-                if var_form == 2:
-                    U_NN_element_1 = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*d2testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*u_NN_quad_element) \
-                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    U_NN_element_2 = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d2testy_quad_element[k]*u_NN_quad_element) \
-                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    U_NN_element = U_NN_element_1 + U_NN_element_2
-
                 if var_form == 3:
                     # \int_{\Omega} \epsilon * \grad{c} \cdot \grad{v} dx dy = \int_{\Omega} \epsilon *  d/dx(c)* d/dx(vx) * vy dx dy
                     # \sum
-                    U_NN_element_diff_1 = tf.convert_to_tensor([[eps*jacobian/jacobian_x*tf.reduce_sum(\
+                    U_NN_element_diff_1 = tf.convert_to_tensor([[self.mew*jacobian/jacobian_x*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
+                    
 
-                    U_NN_element_diff_2 = tf.convert_to_tensor([[eps*jacobian/jacobian_y*tf.reduce_sum(\
+                    U_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
-                    U_NN_element_adv_1 = tf.convert_to_tensor([[b_x*jacobian*tf.reduce_sum(self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) for r in range(Ntest_elementx)]for k in range(Ntest_elementy)],dtype=tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-
-                    U_NN_element_adv_2 = tf.convert_to_tensor([[b_y*jacobian*tf.reduce_sum(self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1yu_NN_quad_element) for r in range(Ntest_elementx)]for k in range(Ntest_elementy)],dtype=tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-
-
+                    V_NN_element_diff_1 = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xv_NN_quad_element) \
+                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    V_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yv_NN_quad_element) \
+                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    
+                    P_NN_element_1 = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*p_NN_quad_element) \
+                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    
+                    P_NN_element_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*p_NN_quad_element) \
+                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    
+                    Continuity_NN_element = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*(d1xu_NN_quad_element+d1yv_NN_quad_element)) \
+                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    
+                    P_NN_element_3 = tf.convert_to_tensor(tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*self.w_quad[:,1:2]*p_NN_quad_element) \
+                                    , dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
                     
-                                        
 
-                    U_NN_element_supg_diff_1 = tf.convert_to_tensor([[-1.0*tau*eps*jacobian/jacobian_x*tf.reduce_sum( \
-                                        self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xu_NN_quad_element+d2yu_NN_quad_element)*testx_quad_element[r] * testy_quad_element[k] * \
-                                        ( b_x * d1testx_quad_element[r] * testy_quad_element[k]  ) )\
-                                        for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                    
-                    U_NN_element_supg_diff_2 = tf.convert_to_tensor([[-1.0*tau*eps*jacobian/jacobian_y*tf.reduce_sum( \
-                                        self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xu_NN_quad_element+d2yu_NN_quad_element)*testx_quad_element[r] * testy_quad_element[k] * \
-                                        ( b_y * d1testy_quad_element[k] * testx_quad_element[r]  ) )\
-                                        for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                    
-                    U_NN_element_supg_adv_1 = tf.convert_to_tensor([[tau*jacobian/jacobian_x*tf.reduce_sum( \
-                                           self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
-                                           (b_x * d1xu_NN_quad_element + b_y * d1yu_NN_quad_element) * \
-                                           (b_x * d1testx_quad_element[r] * testy_quad_element[k]   ) ) 
-                                             for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                    
-                    U_NN_element_supg_adv_2 = tf.convert_to_tensor([[tau*jacobian/jacobian_y*tf.reduce_sum( \
-                                           self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
-                                           (b_x * d1xu_NN_quad_element + b_y * d1yu_NN_quad_element) * \
-                                           (b_y * d1testy_quad_element[k] * testx_quad_element[r] ) ) 
-                                             for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    U_NN_element = U_NN_element_diff_1 + U_NN_element_diff_2 # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    V_NN_element = V_NN_element_diff_1 + V_NN_element_diff_2 # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
 
-                    U_NN_element = U_NN_element_diff_1 + U_NN_element_diff_2  + U_NN_element_adv_1 + U_NN_element_adv_2+ \
-                                   U_NN_element_supg_diff_1 + U_NN_element_supg_diff_2 + U_NN_element_supg_adv_1 + U_NN_element_supg_adv_2 # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                Res_NN_element = tf.reshape(U_NN_element - F_ext_element, [1,-1]) # residual. Data type: tf.tensor, Size: (1,Ntest_elementx*Ntest_elementy) 
-                loss_element = tf.reduce_mean(tf.square(Res_NN_element)) # loss function. Data type: tf.tensor, Size: (1,1)
-                self.varloss_total = self.varloss_total + loss_element
+                Res_NN_element_1 = tf.reshape(U_NN_element - P_NN_element_1 - F_1_ext_element, [1,-1]) # residual. Data type: tf.tensor, Size: (1,Ntest_elementx*Ntest_elementy) 
+                Res_NN_element_2 = tf.reshape(V_NN_element - P_NN_element_2 - F_2_ext_element, [1,-1]) # residual. Data type: tf.tensor, Size: (1,Ntest_elementx*Ntest_elementy)
+                Res_NN_element_3 = tf.reshape(Continuity_NN_element, [1,-1]) # residual. Data type: tf.tensor, Size: (1,Ntest_elementx*Ntest_elementy)
+                Res_NN_element_4 = tf.reshape(P_NN_element_3, [1,-1]) # residual. Data type: tf.tensor, Size: (1,Ntest_elementx*Ntest_elementy)
+
+                loss_element_1 = tf.reduce_mean(tf.square(Res_NN_element_1)) # loss function. Data type: tf.tensor, Size: (1,1)
+                loss_element_2 = tf.reduce_mean(tf.square(Res_NN_element_2)) # loss function. Data type: tf.tensor, Size: (1,1)
+                loss_element_3 = tf.reduce_mean(tf.square(Res_NN_element_3)) # loss function. Data type: tf.tensor, Size: (1,1)
+                loss_element_4 = tf.reduce_mean(tf.square(Res_NN_element_4)) # loss function. Data type: tf.tensor, Size: (1,1)
+                self.varloss_total = self.varloss_total + loss_element_1 + loss_element_2 + loss_element_3
  
-        self.lossb = tf.reduce_mean(tf.square(self.c_bound_tensor - self.u_pred_boundary))
+        self.lossb = tf.reduce_mean(tf.square(self.u_bound_tensor - self.u_pred_boundary)) + tf.reduce_mean(tf.square(self.v_bound_tensor - self.v_pred_boundary)) # loss function. Data type: tf.tensor, Size: (1,1)
         self.lossv = self.varloss_total # 
 
-        self.lossp= tf.reduce_mean(tf.square(self.f_pred - self.ftrain))
+        # self.lossp= tf.reduce_mean(tf.square(self.f_pred - self.ftrain))
        #   
         if scheme == 'VPINNs': # 
 
@@ -252,38 +235,6 @@ class VPINN:
         d1xu_NN_numpy, d2xu_NN_numpy = self.net_dxu(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
         d1yu_NN_numpy, d2yu_NN_numpy = self.net_dyu(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
         #print shape and type of u_NN_numpy
-        res_galerkin = np.zeros((N_quad*N_quad,1))
-        for r in range(Ntest_elementx):
-            for k in range(Ntest_elementy):
-                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_numpy) * eps * jacobian/jacobian_x
-
-                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_numpy) * eps * jacobian/jacobian_y
-
-                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_numpy) * b_x * jacobian
-
-                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1yu_NN_numpy) * b_y * jacobian
-
-        res_supg = np.zeros((N_quad*N_quad,1))
-        for r in range(Ntest_elementx):
-            for k in range(Ntest_elementy):
-                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xu_NN_numpy+d2yu_NN_numpy)*testx_quad_element[r] * testy_quad_element[k] * \
-                ( b_x * d1testx_quad_element[r] * testy_quad_element[k]  ) ) * (-1.0*eps*jacobian/jacobian_x)
-
-                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xu_NN_numpy+d2yu_NN_numpy)*testx_quad_element[r] * testy_quad_element[k] * \
-                ( b_y * d1testy_quad_element[k] * testx_quad_element[r]  ) ) * (-1.0*eps*jacobian/jacobian_y)
-
-                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
-                (b_x * d1xu_NN_numpy + b_y * d1yu_NN_numpy) * \
-                (b_x * d1testx_quad_element[r] * testy_quad_element[k]   ) ) * (jacobian/jacobian_x)
-
-                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
-                (b_x * d1xu_NN_numpy + b_y * d1yu_NN_numpy) * \
-                (b_y * d1testy_quad_element[k] * testx_quad_element[r] ) ) * (jacobian/jacobian_y)
-
-        a = res_galerkin.eval(session=self.sess)
-        b = res_supg.eval(session=self.sess)
-        self.plot_3d(x_quad.reshape(N_quad,N_quad),y_quad.reshape(N_quad,N_quad),a.reshape(N_quad,N_quad),'residue_galerkin.png')
-        self.plot_3d(x_quad.reshape(N_quad,N_quad),y_quad.reshape(N_quad,N_quad),b.reshape(N_quad,N_quad),'residue_supg.png')
         
 
         
@@ -342,8 +293,14 @@ class VPINN:
         return Y
 
     def net_u(self, x, y):  
-        u = self.neural_net(tf.concat([x,y],1), self.weights, self.biases,  self.a)
+        u = self.neural_net(tf.concat([x,y],1), self.weights, self.biases,  self.a)[:,0:1]
         return u
+    def net_v(self, x, y):  
+        v = self.neural_net(tf.concat([x,y],1), self.weights, self.biases,  self.a)[:,1:2]
+        return v
+    def net_p(self, x, y):  
+        p = self.neural_net(tf.concat([x,y],1), self.weights, self.biases,  self.a)[:,2:3]
+        return p
     
     def net_u_numpy(self, x, y):
         u = self.neural_net(tf.concat([x,y],1), self.weights, self.biases,  self.a)
@@ -365,6 +322,12 @@ class VPINN:
         d2xu = tf.gradients(d1xu, x)[0]
         return d1xu, d2xu
     
+    def net_dxv(self, x, y):
+        v   = self.net_v(x, y)
+        d1xv = tf.gradients(v, x)[0]
+        d2xv = tf.gradients(d1xv, x)[0]
+        return d1xv, d2xv
+    
     def net_dxu_numpy(self, x, y):
         u   = self.net_u(x, y)
         d1xu = tf.gradients(u, x)[0]
@@ -378,6 +341,12 @@ class VPINN:
         d2yu = tf.gradients(d1yu, y)[0]
         return d1yu, d2yu 
 
+    def net_dyv(self, x, y):
+        v   = self.net_v(x, y)
+        d1yv = tf.gradients(v, y)[0]
+        d2yv = tf.gradients(d1yv, y)[0]
+        return d1yv, d2yv 
+    
     def net_dyu_numpy(self, x, y):
         u   = self.net_u(x, y)
         d1yu = tf.gradients(u, y)[0]
@@ -433,9 +402,10 @@ class VPINN:
     def train(self, nIter):
         
         tf_dict = {self.x_bound_tensor: self.x_bound  , self.y_bound_tensor: self.y_bound,
-                   self.c_bound_tensor: self.c_bound,
+                   self.u_bound_tensor: self.u_bound, self.v_bound_tensor: self.v_bound,
                    self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test, # 
-                   self.x_force_tensor: self.x_f, self.y_force_tensor: self.y_f}
+                   self.x_force_tensor: self.x_f, self.y_force_tensor: self.y_f,
+                   self.force_1_tensor: self.f1train, self.force_2_tensor: self.f2train}
 
         start_time   = time.time()
         for it in track(range(nIter), description='Training: '): # 
@@ -454,10 +424,15 @@ class VPINN:
                 print(str_print % (it, loss_value, elapsed))
                 start_time = time.time()
 
-    def predict(self):
-        u_pred = self.sess.run(self.c_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
+    def predict_u(self):
+        u_pred = self.sess.run(self.u_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
         return u_pred
-
+    def predict_v(self):
+        v_pred = self.sess.run(self.v_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
+        return v_pred
+    def predict_p(self):
+        p_pred = self.sess.run(self.p_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
+        return p_pred
 #%%
 ###############################################################################
 # =============================================================================
@@ -564,6 +539,8 @@ if __name__ == "__main__":
             - u_bound, Type: numpy.ndarray, Size: (N_bound,1)
         '''
         u_bound = x*0.0 + y*0.0
+        # if all elements of y are 1.0, return 1.0
+        u_bound[np.where(np.all(np.isclose(y,1.0),axis=1))] = 1.0
         return u_bound
     def v_bound_ext(x, y):
         '''
@@ -613,7 +590,7 @@ if __name__ == "__main__":
         f2_temp = x*0.0 + y*0.0 + 0.0
         return f2_temp
     
-    def c_exact(x, y):
+    def u_exact(x, y):
         '''
         Exact Solution
         input: 
@@ -622,8 +599,14 @@ if __name__ == "__main__":
         output: 
             - c_bound, Type: numpy.ndarray, Size: (N_bound,1)
         '''
-        c_exact = x*0.0 + y*0.0
-        return c_exact
+        u_exact = x*0.0 + y*0.0
+        return u_exact
+    def v_exact(x,y):
+        v_exact = x*0.0 + y*0.0
+        return v_exact
+    def p_exact(x,y):
+        p_exact = x*0.0 + y*0.0
+        return p_exact
     ###########################################################################
     # Boundary points
     #For a domain [0,1]^2, use Latin Hypercube Sampling (lhs) to generate boundary points.
@@ -684,11 +667,11 @@ if __name__ == "__main__":
 
 
     u_bound_left = np.empty(len(y_left))[:,None]         # Datatype: numpy.ndarray, Size: (N_bound,1)
-    u_bound_left = bound_ext(x_left, y_left)                 # Evaluate the exact solution at boundary points using given dirichlet boundary condition
+    u_bound_left = u_bound_ext(x_left, y_left)                 # Evaluate the exact solution at boundary points using given dirichlet boundary condition
     u_left_train = u_bound_left                          # Datatype: numpy.ndarray, Size: (N_bound,1), Place the exact solution at boundary points
 
     v_bound_left = np.empty(len(y_left))[:,None]         # Datatype: numpy.ndarray, Size: (N_bound,1)
-    v_bound_left = bound_ext(x_left, y_left)                 # Evaluate the exact solution at boundary points using given dirichlet boundary condition
+    v_bound_left = v_bound_ext(x_left, y_left)                 # Evaluate the exact solution at boundary points using given dirichlet boundary condition
     v_left_train = v_bound_left                          # Datatype: numpy.ndarray, Size: (N_bound,1), Place the exact solution at boundary points
 
 
@@ -781,7 +764,7 @@ if __name__ == "__main__":
 
             ddy_test_y_quad_element = grad_test_func(num_testfunc_elem_y, y_quad) # Datatype: numpy.ndarray, Size: (N_test_y, N_quad*N_quad), Value of derivative of test functions in y direction at quadrature points in current element
 
-            c_quad_element = bound_ext(x_quad_element, y_quad_element) # Datatype: numpy.ndarray, Size: (N_quad*N_quad,1), Value of exact solution at quadrature points in current element
+            c_quad_element = f_1_ext(x_quad_element, y_quad_element) # Datatype: numpy.ndarray, Size: (N_quad*N_quad,1), Value of exact solution at quadrature points in current element
             f_1_quad_element = f_1_ext(x_quad_element, y_quad_element)     # Datatype: numpy.ndarray, Size: (N_quad*N_quad,1), Value of forcing term at quadrature points in current element
             f_2_quad_element = f_2_ext(x_quad_element, y_quad_element)     # Datatype: numpy.ndarray, Size: (N_quad*N_quad,1), Value of forcing term at quadrature points in current element
 
@@ -814,35 +797,17 @@ if __name__ == "__main__":
                             w_quad[:,0:1]*test_x_quad_element[r]*w_quad[:,1:2]*test_y_quad_element[k]*f_2_quad_element) \
                             for r in range(num_testfunc_elem_x)] for k in range(num_testfunc_elem_y)])
             
-            if var_form == 3:
-                # \int_{\Omega} \tau (b_x * d(v)/dx) f dx dy = \int_{\Omega} \tau (b_x . d(v_x)/dx * v_y) * f * dx dy
-                # Multiply by jacobian to account for the area of the current element. Divide jacobian_x to account for the derivative of test function. Convert integral into summation over quadrature points
-                # Jacobian/Jacobian_x*\sum_{i=1}^{N_quad} w_x_i * w_y_i * \tau (b_x . d(v_x_i)/dx * v_y_i) * f_i
-                # For each test function in x and y direction
-                # Hence, resulting size is (N_test_x, N_test_y)
-                F_ext_element_SUPG_1 = np.asarray([[jacobian/jacobian_x*np.sum(\
-                                w_quad[:,0:1]*w_quad[:,1:2]*f_quad_element*tau* \
-                                ( (b_x* ddx_test_x_quad_element[r] * test_y_quad_element[k])  ) ) 
-                                for r in range(num_testfunc_elem_x)] for k in range(num_testfunc_elem_y)])
                 
-                # \int_{\Omega} \tau (b_y * d(v)/dy) f dx dy = \int_{\Omega} \tau (b_y . d(v_y)/dy * v_x) * f * dx dy
-                # Multiply by jacobian to account for the area of the current element. Divide jacobian_y to account for the derivative of test function. Convert integral into summation over quadrature points
-                # Jacobian/Jacobian_y*\sum_{i=1}^{N_quad} w_x_i * w_y_i * \tau (b_y . d(v_y_i)/dy * v_x_i) * f_i
-                # For each test function in x and y direction
-                # Hence, resulting size is (N_test_x, N_test_y)
-                F_ext_element_SUPG_2 = np.asarray([[jacobian/jacobian_x*np.sum(\
-                                w_quad[:,0:1]*w_quad[:,1:2]*f_quad_element*tau* \
-                                ( (b_y * ddy_test_y_quad_element[k] * test_x_quad_element[r]) ) ) 
-                                for r in range(num_testfunc_elem_x)] for k in range(num_testfunc_elem_y)])
+            
                 
-                F_ext_element = F_ext_element + F_ext_element_SUPG_1 + F_ext_element_SUPG_2
-                
-            c_bound_total.append(c_bound_element)
+            # c_bound_total.append(c_bound_element)
     
-            F_ext_total.append(F_ext_element) 
+            F_1_ext_total.append(F_1_ext_element) 
+            F_2_ext_total.append(F_2_ext_element)
     
 #    U_ext_total = np.reshape(U_ext_total, [N_el_x, N_el_y, N_test_y, N_test_x])
-    F_ext_total = np.reshape(F_ext_total, [N_el_x, N_el_y, N_test_y[0], N_test_x[0]]) # Datatype: numpy.ndarray, Size: (N_el_x, N_el_y, N_test_y, N_test_x), RHS for VPINNs
+    F_1_ext_total = np.reshape(F_1_ext_total, [N_el_x, N_el_y, N_test_y[0], N_test_x[0]]) # Datatype: numpy.ndarray, Size: (N_el_x, N_el_y, N_test_y, N_test_x), RHS for VPINNs
+    F_2_ext_total = np.reshape(F_2_ext_total, [N_el_x, N_el_y, N_test_y[0], N_test_x[0]]) # Datatype: numpy.ndarray, Size: (N_el_x, N_el_y, N_test_y, N_test_x), RHS for VPINNs
     
     ###########################################################################
     # Test points
@@ -850,21 +815,33 @@ if __name__ == "__main__":
     xtest = np.arange(x_left, x_right + delta_test, delta_test) # Datatype: numpy.ndarray, Size: (N_test,), x coordinates of test points
     ytest = np.arange(y_bottom, y_up + delta_test, delta_test) # Datatype: numpy.ndarray, Size: (N_test,), y coordinates of test points
 
-    data_test = np.asarray([[ [xtest[i],ytest[j],c_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
-    x_test = data_test.flatten()[0::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), x coordinates of test points
-    y_test = data_test.flatten()[1::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), y coordinates of test points
-    exact_c = data_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
+    U_test = np.asarray([[ [xtest[i],ytest[j],u_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
+    x_test = U_test.flatten()[0::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), x coordinates of test points
+    y_test = U_test.flatten()[1::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), y coordinates of test points
+    exact_u = U_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
     coord_test = np.hstack((x_test[:,None],y_test[:,None]))
-    c_test = exact_c[:,None]
+    u_test = exact_u[:,None]
+
+    V_test = np.asarray([[ [xtest[i],ytest[j],v_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
+    exact_v = V_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
+    v_test = exact_v[:,None]
+
+    P_test = np.asarray([[ [xtest[i],ytest[j],p_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
+    exact_p = P_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
+    p_test = exact_p[:,None]
+
+
 
 
     ###########################################################################
-    model = VPINN(coord_all_train, c_all_train, coord_train_force, f_train, quad_coord_train, quad_weight_train,\
-                  c_bound_total, F_ext_total, grid_x, grid_y, num_total_testfunc, coord_test, c_test, Net_layer)
+    model = VPINN(coord_all_train, u_all_train,v_all_train, coord_train_force, f_1_train, f_2_train, quad_coord_train, quad_weight_train,\
+                 F_1_ext_total, F_2_ext_total, grid_x, grid_y, num_total_testfunc, coord_test, u_test,v_test,p_test, Net_layer)
     
-    c_pred_his, loss_his = [], []
-    model.train(100 + 1)
-    c_pred = model.predict()
+    vec_pred_his, loss_his = [], []
+    model.train(50000 + 1)
+    u_pred = model.predict_u()
+    v_pred = model.predict_v()
+    p_pred = model.predict_p()
 
 #%%
     ###########################################################################
@@ -916,54 +893,58 @@ if __name__ == "__main__":
     ###########################################################################
     x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),len(ytest)))
     y_test_plot = np.asarray(np.split(coord_test[:,1:2].flatten(),len(ytest)))
-    c_test_plot = np.asarray(np.split(c_test.flatten(),len(ytest)))
-    c_pred_plot = np.asarray(np.split(c_pred.flatten(),len(ytest)))
+    u_pred_plot = np.asarray(np.split(u_pred.flatten(),len(ytest)))
+    v_pred_plot = np.asarray(np.split(v_pred.flatten(),len(ytest)))
+    p_pred_plot = np.asarray(np.split(p_pred.flatten(),len(ytest)))
+
     
     
     fontsize = 32
     labelsize = 26
-    fig_ext, ax_ext = plt.subplots(constrained_layout=True)
-    CS_ext = ax_ext.contourf(x_test_plot, y_test_plot, c_test_plot, 100, cmap='jet', origin='lower')
-    cbar = fig_ext.colorbar(CS_ext, shrink=0.67)
+   
+    
+    
+    
+    fig_pred_u, ax_pred_u = plt.subplots(constrained_layout=True)
+    CS_pred = ax_pred_u.contourf(x_test_plot, y_test_plot, u_pred_plot, 100, cmap='jet', origin='lower')
+    cbar = fig_pred_u.colorbar(CS_pred, shrink=0.67)
     cbar.ax.tick_params(labelsize = labelsize)
-    ax_ext.locator_params(nbins=8)
-    ax_ext.set_xlabel('$x$' , fontsize = fontsize)
-    ax_ext.set_ylabel('$y$' , fontsize = fontsize)
+    ax_pred_u.locator_params(nbins=8)
+    ax_pred_u.set_xlabel('$x$' , fontsize = fontsize)
+    ax_pred_u.set_ylabel('$y$' , fontsize = fontsize)
     plt.tick_params( labelsize = labelsize)
-    ax_ext.set_aspect(1)
+    ax_pred_u.set_aspect(1)
     #fig.tight_layout()
-    fig_ext.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_',scheme,'_Exact','.png']))
+    fig_pred_u.set_size_inches(w=11,h=11)
+    plt.savefig(''.join(['Poisson2D_U_',scheme,'_Predict','.png']))
     
-    
-    
-    fig_pred, ax_pred = plt.subplots(constrained_layout=True)
-    CS_pred = ax_pred.contourf(x_test_plot, y_test_plot, c_pred_plot, 100, cmap='jet', origin='lower')
-    cbar = fig_pred.colorbar(CS_pred, shrink=0.67)
+    fig_pred_v, ax_pred_v = plt.subplots(constrained_layout=True)
+    CS_pred = ax_pred_v.contourf(x_test_plot, y_test_plot, v_pred_plot, 100, cmap='jet', origin='lower')
+    cbar = fig_pred_v.colorbar(CS_pred, shrink=0.67)
     cbar.ax.tick_params(labelsize = labelsize)
-    ax_pred.locator_params(nbins=8)
-    ax_pred.set_xlabel('$x$' , fontsize = fontsize)
-    ax_pred.set_ylabel('$y$' , fontsize = fontsize)
+    ax_pred_v.locator_params(nbins=8)
+    ax_pred_v.set_xlabel('$x$' , fontsize = fontsize)
+    ax_pred_v.set_ylabel('$y$' , fontsize = fontsize)
     plt.tick_params( labelsize = labelsize)
-    ax_pred.set_aspect(1)
+    ax_pred_v.set_aspect(1)
     #fig.tight_layout()
-    fig_pred.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_',scheme,'_Predict','.png']))
-    
-    
-    
-    fig_err, ax_err = plt.subplots(constrained_layout=True)
-    CS_err = ax_err.contourf(x_test_plot, y_test_plot, abs(c_test_plot - c_pred_plot), 100, cmap='jet', origin='lower')
-    cbar = fig_err.colorbar(CS_err, shrink=0.65, format="%.4f")
+    fig_pred_v.set_size_inches(w=11,h=11)
+    plt.savefig(''.join(['Poisson2D_V_',scheme,'_Predict','.png']))
+
+    fig_pred_p, ax_pred_p = plt.subplots(constrained_layout=True)
+    CS_pred = ax_pred_p.contourf(x_test_plot, y_test_plot, p_pred_plot, 100, cmap='jet', origin='lower')
+    cbar = fig_pred_p.colorbar(CS_pred, shrink=0.67)
     cbar.ax.tick_params(labelsize = labelsize)
-    ax_err.locator_params(nbins=8)
-    ax_err.set_xlabel('$x$' , fontsize = fontsize)
-    ax_err.set_ylabel('$y$' , fontsize = fontsize)
+    ax_pred_p.locator_params(nbins=8)
+    ax_pred_p.set_xlabel('$x$' , fontsize = fontsize)
+    ax_pred_p.set_ylabel('$y$' , fontsize = fontsize)
     plt.tick_params( labelsize = labelsize)
-    ax_err.set_aspect(1)
+    ax_pred_p.set_aspect(1)
     #fig.tight_layout()
-    fig_err.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_',scheme,'_PntErr','.png']))
+    fig_pred_p.set_size_inches(w=11,h=11)
+    plt.savefig(''.join(['Poisson2D_P_',scheme,'_Predict','.png']))
+    
+   
     
     
         
