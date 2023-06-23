@@ -168,7 +168,7 @@ class VPINN:
                     
                     
 
-                    U_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                    U_NN_element_diff_2 = tf.convert_to_tensor([[self.mew*jacobian/jacobian_y*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
@@ -180,10 +180,10 @@ class VPINN:
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
                     
-                    V_NN_element_diff_1 = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
+                    V_NN_element_diff_1 = tf.convert_to_tensor([[self.mew*jacobian/jacobian_x*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xv_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                    V_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                    V_NN_element_diff_2 = tf.convert_to_tensor([[self.mew*jacobian/jacobian_y*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yv_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
 
