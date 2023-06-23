@@ -220,7 +220,7 @@ class VPINN:
                 loss_element_2 = tf.reduce_mean(tf.square(Res_NN_element_2)) # loss function. Data type: tf.tensor, Size: (1,1)
                 loss_element_3 = tf.reduce_mean(tf.square(Res_NN_element_3)) # loss function. Data type: tf.tensor, Size: (1,1)
                 loss_element_4 = tf.reduce_mean(tf.square(Res_NN_element_4)) # loss function. Data type: tf.tensor, Size: (1,1)
-                self.varloss_total = self.varloss_total + loss_element_1 + loss_element_2 + loss_element_3
+                self.varloss_total = self.varloss_total + loss_element_1 + loss_element_2 + loss_element_3 + loss_element_4
  
         self.lossb = tf.reduce_mean(tf.square(self.u_bound_tensor - self.u_pred_boundary)) + tf.reduce_mean(tf.square(self.v_bound_tensor - self.v_pred_boundary)) # loss function. Data type: tf.tensor, Size: (1,1)
         self.lossv = self.varloss_total # 
