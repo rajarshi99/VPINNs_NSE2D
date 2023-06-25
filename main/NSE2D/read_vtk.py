@@ -19,10 +19,10 @@ def read_vtk(vtk_file_name = 'Mean_NRealisations_500.00052.vtk'):
     for l_num in range(len(lines)):
         line = lines[l_num]
         values = line.split(' ')
-        if line == 'SCALARS P_Mean float':
+        if line == 'SCALARS p float':
             p_vals_beg = l_num + 2
             p_vals_end = l_num + 1 + n_xy
-        if line == 'VECTORS U_Mean float':
+        if line == 'VECTORS u float':
             uv_vals_beg = l_num + 1
             uv_vals_end = l_num + n_xy
 
