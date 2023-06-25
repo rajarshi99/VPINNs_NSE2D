@@ -25,6 +25,8 @@ from rich.console import Console
 from rich.progress import track
 from rich.table import Table
 
+from read_vtk import *
+
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib import cm
 
@@ -822,6 +824,7 @@ if __name__ == "__main__":
     
     ###########################################################################
     # Test points
+    """
     delta_test = 0.01
     xtest = np.arange(x_left, x_right + delta_test, delta_test) # Datatype: numpy.ndarray, Size: (N_test,), x coordinates of test points
     ytest = np.arange(y_bottom, y_up + delta_test, delta_test) # Datatype: numpy.ndarray, Size: (N_test,), y coordinates of test points
@@ -829,6 +832,7 @@ if __name__ == "__main__":
     U_test = np.asarray([[ [xtest[i],ytest[j],u_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
     x_test = U_test.flatten()[0::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), x coordinates of test points
     y_test = U_test.flatten()[1::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), y coordinates of test points
+
     exact_u = U_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
     coord_test = np.hstack((x_test[:,None],y_test[:,None]))
     u_test = exact_u[:,None]
@@ -840,16 +844,20 @@ if __name__ == "__main__":
     P_test = np.asarray([[ [xtest[i],ytest[j],p_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
     exact_p = P_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
     p_test = exact_p[:,None]
+    """
 
-
-
+    coord_test, exact_u, exact_v, exact_p = read_vtk('NSE2D.vtk')
+    u_test = exact_u[:,None]
+    v_test = exact_v[:,None]
+    p_test = exact_p[:,None]
+    N_test = 33
 
     ###########################################################################
     model = VPINN(coord_all_train, u_all_train,v_all_train, coord_train_force, f_1_train, f_2_train, quad_coord_train, quad_weight_train,\
                  F_1_ext_total, F_2_ext_total, grid_x, grid_y, num_total_testfunc, coord_test, u_test,v_test,p_test, Net_layer)
     
     vec_pred_his, loss_his = [], []
-    model.train(50000 + 1)
+    model.train(200 + 1)
     u_pred = model.predict_u()
     v_pred = model.predict_v()
     p_pred = model.predict_p()
@@ -902,11 +910,11 @@ if __name__ == "__main__":
     plt.savefig(''.join(['Poisson2D_',scheme,'_Domain','.pdf']))
     
     ###########################################################################
-    x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),len(ytest)))
-    y_test_plot = np.asarray(np.split(coord_test[:,1:2].flatten(),len(ytest)))
-    u_pred_plot = np.asarray(np.split(u_pred.flatten(),len(ytest)))
-    v_pred_plot = np.asarray(np.split(v_pred.flatten(),len(ytest)))
-    p_pred_plot = np.asarray(np.split(p_pred.flatten(),len(ytest)))
+    x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),N_test))
+    y_test_plot = np.asarray(np.split(coord_test[:,1:2].flatten(),N_test))
+    u_pred_plot = np.asarray(np.split(u_pred.flatten(),N_test))
+    v_pred_plot = np.asarray(np.split(v_pred.flatten(),N_test))
+    p_pred_plot = np.asarray(np.split(p_pred.flatten(),N_test))
 
     
     
