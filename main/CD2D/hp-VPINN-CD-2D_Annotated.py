@@ -24,10 +24,14 @@ import time
 from rich.console import Console
 from rich.progress import track
 from rich.table import Table
+import yaml
+import os
+from pathlib import Path
 
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib import cm
 
+from read_vtk import *
 
 np.random.seed(1234)
 tf.set_random_seed(1234)
@@ -55,7 +59,7 @@ def get_variable_info(variable):
 # %%
 class VPINN:
     def __init__(self, coord_bound_train, c_bound_train, coord_train_force, f_train, coord_quad_train, quad_weight_train, c_bound_total, F_exact_total,\
-                 gridx, gridy, num_total_testfunc,coord_test, c_test, layers):
+                 gridx, gridy, num_total_testfunc,coord_test, c_test, layers, eps, b_x, b_y, tau, save_directory):
 
         self.x_bound = coord_bound_train[:,0:1] # boundary points in x direction. Data type: numpy.ndarray, Size: (N_bound,1)
         self.y_bound = coord_bound_train[:,1:2] # boundary points in y direction. Data type: numpy.ndarray, Size: (N_bound,1)
@@ -72,6 +76,8 @@ class VPINN:
         self.x_test = coord_test[:,0:1]         # test points in x direction. Data type: numpy.ndarray, Size: (N_test,1)
         self.y_test = coord_test[:,1:2]         # test points in y direction. Data type: numpy.ndarray, Size: (N_test,1)
         self.test_c = c_test                    # test values. Data type: numpy.ndarray, Size: (N_test,1)
+
+        print("afasdfa adsf asdfasdf asdf asdfsadf a")
 
         self.num_element_x = np.size(num_total_testfunc[0]) # number of elements in x direction. Data type: int, Size: (1)
         self.num_element_y = np.size(num_total_testfunc[1])  # number of elements in y direction. Data type: int, Size: (1)
@@ -102,21 +108,10 @@ class VPINN:
         self.y_quad_tensor = tf.placeholder(tf.float64, shape=[None, self.y_quad.shape[1]]) # quadrature points in y direction. Data type: tf.placeholder, Size: (N_quad,1)
 
         self.sess = tf.Session() # initialize the tensorflow session
-        
-        eps = 1e-4 # diffusion coefficient. Data type: float, Size: (1)
 
-
- 
-        b_x = 1.0 # advection velocity in x direction. Data type: float, Size: (1)
-
-             
-        b_y = 0.0 # advection velocity in y direction. Data type: float, Size: (1)
-
-        tau = 0.1 # SUPG stabilization parameter. Data type: float, Size: (1)
-
-        self.u_pred_boundary = self.net_u(self.x_bound_tensor, self.y_bound_tensor)                 # predicted values at the boundary points. Data type: tf.tensor, Size: (N_bound,1)
+        self.c_pred_boundary = self.net_c(self.x_bound_tensor, self.y_bound_tensor)                 # predicted values at the boundary points. Data type: tf.tensor, Size: (N_bound,1)
         self.f_pred = self.net_f(self.x_force_tensor, self.y_force_tensor)                          # predicted values at the force sampling points. Data type: tf.tensor, Size: (N_force,1)
-        self.c_test = self.net_u(self.x_test, self.y_test)                                          # predicted values at the test points. Data type: tf.tensor, Size: (N_test,1)
+        self.c_test = self.net_c(self.x_test, self.y_test)                                          # predicted values at the test points. Data type: tf.tensor, Size: (N_test,1)
         
         self.varloss_total = 0 # initialize the variational loss 
         
@@ -130,16 +125,14 @@ class VPINN:
                 x_quad_element = tf.constant(gridx[ex] + (gridx[ex+1]-gridx[ex])/2*(self.x_quad+1)) # quadrature points in x direction. Data type: tf.constant, Size: (N_quad,1)
                 y_quad_element = tf.constant(gridy[ey] + (gridy[ey+1]-gridy[ey])/2*(self.y_quad+1)) # quadrature points in y direction. Data type: tf.constant, Size: (N_quad,1)
 
-                jacobian_x     = ((gridx[ex+1]-gridx[ex])/2)                                        # jacobian in x direction. Data type: float, Size: (1)
-                jacobian_y     = ((gridy[ey+1]-gridy[ey])/2)                                        # jacobian in y direction. Data type: float, Size: (1)
-                jacobian       = ((gridx[ex+1]-gridx[ex])/2)*((gridy[ey+1]-gridy[ey])/2)            # jacobian. Data type: float, Size: (1)
                 
-                u_NN_quad_element = self.net_u(x_quad_element, y_quad_element)                      # predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+                
+                c_NN_quad_element = self.net_c(x_quad_element, y_quad_element)                      # predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
 
 
 
-                d1xu_NN_quad_element, d2xu_NN_quad_element = self.net_dxu(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
-                d1yu_NN_quad_element, d2yu_NN_quad_element = self.net_dyu(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+                d1xc_NN_quad_element, d2xc_NN_quad_element = self.net_dxc(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+                d1yc_NN_quad_element, d2yc_NN_quad_element = self.net_dyc(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
                                 
                 testx_quad_element = self.Test_fcnx(Ntest_elementx, self.x_quad)                              # test functions in x direction. Data type: numpy.ndarray, Size: (Ntest_elementx,N_quad)
                 d1testx_quad_element, d2testx_quad_element = self.grad_test_func(Ntest_elementx, self.x_quad) # first and second derivatives of the test functions in x direction. Data type: numpy.ndarray, Size: (Ntest_elementx,N_quad)
@@ -147,88 +140,91 @@ class VPINN:
                 d1testy_quad_element, d2testy_quad_element = self.grad_test_func(Ntest_elementy, self.y_quad) # first and second derivatives of the test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
                 
     
-                integrand_1 = d2xu_NN_quad_element + d2yu_NN_quad_element
+                integrand_1 = d2xc_NN_quad_element + d2yc_NN_quad_element
                 
-                if var_form == 0:
-                    U_NN_element = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*integrand_1) \
+                if var_form == 0:                                                                                                       
+                    c_NN_element = tf.convert_to_tensor([[jacobian*tf.reduce_sum(self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*integrand_1)\
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
 
                 if var_form == 1:
-                    U_NN_element_1 = tf.convert_to_tensor([[(jacobian/jacobian_x)*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) +\
+                    c_NN_element_1 = tf.convert_to_tensor([[(jacobian/jacobian_x)*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xc_NN_quad_element) +\
                                     (jacobian/jacobian_y)*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) +
+                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yc_NN_quad_element) +
                                     jacobian*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element)
+                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xc_NN_quad_element)
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    # U_NN_element_2 = tf.convert_to_tensor([[(jacobian/jacobian_y)*tf.reduce_sum(\
+                    # c_NN_element_2 = tf.convert_to_tensor([[(jacobian/jacobian_y)*tf.reduce_sum(\
                     #                 self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
                     #                 for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
                     # U_NN_element = -1.0 * (U_NN_element_1 + U_NN_element_2 ) * self.diffConst
-                    U_NN_element = 1.0 * (U_NN_element_1) 
+                    c_NN_element = 1.0 * (c_NN_element_1) 
                     
 
     
                 if var_form == 2:
-                    U_NN_element_1 = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*d2testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*u_NN_quad_element) \
+                    c_NN_element_1 = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*d2testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*c_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    U_NN_element_2 = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d2testy_quad_element[k]*u_NN_quad_element) \
+                    c_NN_element_2 = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d2testy_quad_element[k]*c_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
-                    U_NN_element = U_NN_element_1 + U_NN_element_2
+                    c_NN_element = c_NN_element_1 + c_NN_element_2
 
                 if var_form == 3:
-                    # \int_{\Omega} \epsilon * \grad{c} \cdot \grad{v} dx dy = \int_{\Omega} \epsilon *  d/dx(c)* d/dx(vx) * vy dx dy
-                    # \sum
-                    U_NN_element_diff_1 = tf.convert_to_tensor([[eps*jacobian/jacobian_x*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
+                    # \int_{\Omega} \epsilon * \grad{c} \cdot \grad{v} dx dy = \int_{\Omega} \epsilon *  d/dx(c)* d/dx(vx) * vy dx dy + 
+                    # \sum 
+                    c_NN_element_diff_1 = tf.convert_to_tensor([[eps*jacobian/jacobian_x*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xc_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
 
-                    U_NN_element_diff_2 = tf.convert_to_tensor([[eps*jacobian/jacobian_y*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
+                    c_NN_element_diff_2 = tf.convert_to_tensor([[eps*jacobian/jacobian_y*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yc_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
-                    U_NN_element_adv_1 = tf.convert_to_tensor([[b_x*jacobian*tf.reduce_sum(self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) for r in range(Ntest_elementx)]for k in range(Ntest_elementy)],dtype=tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    c_NN_element_adv_1 = tf.convert_to_tensor([[b_x*jacobian*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xc_NN_quad_element) \
+                                    for r in range(Ntest_elementx)]for k in range(Ntest_elementy)],dtype=tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
 
-                    U_NN_element_adv_2 = tf.convert_to_tensor([[b_y*jacobian*tf.reduce_sum(self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1yu_NN_quad_element) for r in range(Ntest_elementx)]for k in range(Ntest_elementy)],dtype=tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    c_NN_element_adv_2 = tf.convert_to_tensor([[b_y*jacobian*tf.reduce_sum(\
+                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1yc_NN_quad_element) \
+                                    for r in range(Ntest_elementx)]for k in range(Ntest_elementy)],dtype=tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
 
 
                     
                     
                                         
 
-                    U_NN_element_supg_diff_1 = tf.convert_to_tensor([[-1.0*tau*eps*jacobian/jacobian_x*tf.reduce_sum( \
-                                        self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xu_NN_quad_element+d2yu_NN_quad_element)*testx_quad_element[r] * testy_quad_element[k] * \
+                    c_NN_element_supg_diff_1 = tf.convert_to_tensor([[-1.0*tau*eps*jacobian/jacobian_x*tf.reduce_sum( \
+                                        self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xc_NN_quad_element+d2yc_NN_quad_element)*testx_quad_element[r] * testy_quad_element[k] * \
                                         ( b_x * d1testx_quad_element[r] * testy_quad_element[k]  ) )\
                                         for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
-                    U_NN_element_supg_diff_2 = tf.convert_to_tensor([[-1.0*tau*eps*jacobian/jacobian_y*tf.reduce_sum( \
-                                        self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xu_NN_quad_element+d2yu_NN_quad_element)*testx_quad_element[r] * testy_quad_element[k] * \
+                    c_NN_element_supg_diff_2 = tf.convert_to_tensor([[-1.0*tau*eps*jacobian/jacobian_y*tf.reduce_sum( \
+                                        self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xc_NN_quad_element+d2yc_NN_quad_element)*testx_quad_element[r] * testy_quad_element[k] * \
                                         ( b_y * d1testy_quad_element[k] * testx_quad_element[r]  ) )\
                                         for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
-                    U_NN_element_supg_adv_1 = tf.convert_to_tensor([[tau*jacobian/jacobian_x*tf.reduce_sum( \
+                    c_NN_element_supg_adv_1 = tf.convert_to_tensor([[tau*jacobian/jacobian_x*tf.reduce_sum( \
                                            self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
-                                           (b_x * d1xu_NN_quad_element + b_y * d1yu_NN_quad_element) * \
+                                           (b_x * d1xc_NN_quad_element + b_y * d1yc_NN_quad_element) * \
                                            (b_x * d1testx_quad_element[r] * testy_quad_element[k]   ) ) 
                                              for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
-                    U_NN_element_supg_adv_2 = tf.convert_to_tensor([[tau*jacobian/jacobian_y*tf.reduce_sum( \
+                    c_NN_element_supg_adv_2 = tf.convert_to_tensor([[tau*jacobian/jacobian_y*tf.reduce_sum( \
                                            self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
-                                           (b_x * d1xu_NN_quad_element + b_y * d1yu_NN_quad_element) * \
+                                           (b_x * d1xc_NN_quad_element + b_y * d1yc_NN_quad_element) * \
                                            (b_y * d1testy_quad_element[k] * testx_quad_element[r] ) ) 
                                              for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
 
-                    U_NN_element = U_NN_element_diff_1 + U_NN_element_diff_2  + U_NN_element_adv_1 + U_NN_element_adv_2+ \
-                                   U_NN_element_supg_diff_1 + U_NN_element_supg_diff_2 + U_NN_element_supg_adv_1 + U_NN_element_supg_adv_2 # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                Res_NN_element = tf.reshape(U_NN_element - F_ext_element, [1,-1]) # residual. Data type: tf.tensor, Size: (1,Ntest_elementx*Ntest_elementy) 
+                    c_NN_element = c_NN_element_diff_1 + c_NN_element_diff_2  + c_NN_element_adv_1 + c_NN_element_adv_2+ \
+                                   c_NN_element_supg_diff_1 + c_NN_element_supg_diff_2 + c_NN_element_supg_adv_1 + c_NN_element_supg_adv_2 # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                Res_NN_element = tf.reshape(c_NN_element - F_ext_element, [1,-1]) # residual. Data type: tf.tensor, Size: (1,Ntest_elementx*Ntest_elementy) 
                 loss_element = tf.reduce_mean(tf.square(Res_NN_element)) # loss function. Data type: tf.tensor, Size: (1,1)
                 self.varloss_total = self.varloss_total + loss_element
  
-        self.lossb = tf.reduce_mean(tf.square(self.c_bound_tensor - self.u_pred_boundary))
+        self.lossb = tf.reduce_mean(tf.square(self.c_bound_tensor - self.c_pred_boundary))
         self.lossv = self.varloss_total # 
 
         self.lossp= tf.reduce_mean(tf.square(self.f_pred - self.ftrain))
@@ -248,48 +244,48 @@ class VPINN:
 
 
 
-        u_NN_numpy = self.net_u(x_quad_element, y_quad_element)
-        d1xu_NN_numpy, d2xu_NN_numpy = self.net_dxu(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
-        d1yu_NN_numpy, d2yu_NN_numpy = self.net_dyu(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+        c_NN_numpy = self.net_c(x_quad_element, y_quad_element)
+        d1xc_NN_numpy, d2xc_NN_numpy = self.net_dxc(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+        d1yc_NN_numpy, d2yc_NN_numpy = self.net_dyc(x_quad_element, y_quad_element) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
         #print shape and type of u_NN_numpy
         res_galerkin = np.zeros((N_quad*N_quad,1))
         for r in range(Ntest_elementx):
             for k in range(Ntest_elementy):
-                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_numpy) * eps * jacobian/jacobian_x
+                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xc_NN_numpy) * eps * jacobian/jacobian_x
 
-                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_numpy) * eps * jacobian/jacobian_y
+                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yc_NN_numpy) * eps * jacobian/jacobian_y
 
-                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_numpy) * b_x * jacobian
+                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xc_NN_numpy) * b_x * jacobian
 
-                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1yu_NN_numpy) * b_y * jacobian
+                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1yc_NN_numpy) * b_y * jacobian
 
         res_supg = np.zeros((N_quad*N_quad,1))
         for r in range(Ntest_elementx):
             for k in range(Ntest_elementy):
-                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xu_NN_numpy+d2yu_NN_numpy)*testx_quad_element[r] * testy_quad_element[k] * \
+                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xc_NN_numpy+d2yc_NN_numpy)*testx_quad_element[r] * testy_quad_element[k] * \
                 ( b_x * d1testx_quad_element[r] * testy_quad_element[k]  ) ) * (-1.0*eps*jacobian/jacobian_x)
 
-                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xu_NN_numpy+d2yu_NN_numpy)*testx_quad_element[r] * testy_quad_element[k] * \
+                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xc_NN_numpy+d2yc_NN_numpy)*testx_quad_element[r] * testy_quad_element[k] * \
                 ( b_y * d1testy_quad_element[k] * testx_quad_element[r]  ) ) * (-1.0*eps*jacobian/jacobian_y)
 
                 res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
-                (b_x * d1xu_NN_numpy + b_y * d1yu_NN_numpy) * \
+                (b_x * d1xc_NN_numpy + b_y * d1yc_NN_numpy) * \
                 (b_x * d1testx_quad_element[r] * testy_quad_element[k]   ) ) * (jacobian/jacobian_x)
 
                 res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
-                (b_x * d1xu_NN_numpy + b_y * d1yu_NN_numpy) * \
+                (b_x * d1xc_NN_numpy + b_y * d1yc_NN_numpy) * \
                 (b_y * d1testy_quad_element[k] * testx_quad_element[r] ) ) * (jacobian/jacobian_y)
 
         a = res_galerkin.eval(session=self.sess)
         b = res_supg.eval(session=self.sess)
-        self.plot_3d(x_quad.reshape(N_quad,N_quad),y_quad.reshape(N_quad,N_quad),a.reshape(N_quad,N_quad),'residue_galerkin.png')
-        self.plot_3d(x_quad.reshape(N_quad,N_quad),y_quad.reshape(N_quad,N_quad),b.reshape(N_quad,N_quad),'residue_supg.png')
+        self.plot_3d(x_quad.reshape(N_quad,N_quad),y_quad.reshape(N_quad,N_quad),a.reshape(N_quad,N_quad),'Galerkin','residue_galerkin.png')
+        self.plot_3d(x_quad.reshape(N_quad,N_quad),y_quad.reshape(N_quad,N_quad),b.reshape(N_quad,N_quad),'SUPG', 'residue_supg.png')
         
 
         
 ###############################################################################
 ###############################################################################
-    def plot_3d(self,x,y,a,file_name):
+    def plot_3d(self,x,y,a,scheme, file_name,epochs = -1,):
         
 
         fig3d = plt.figure()
@@ -303,7 +299,10 @@ class VPINN:
         ax3D.set_zlabel('$residue$' , fontsize = fontsize)
         # ax3D.set_zlim(-0.01,0.01)
         # ax3D.view_init(elev=25,azim=250,roll=0,vertical_axis='z')
-        ax3D.set_title(''.join(['Galerkin Residue']),fontsize=fontsize)
+        if epochs != -1:
+            ax3D.set_title(''.join([scheme + ' Residue, ' + str(epochs) + ' epochs']),fontsize=fontsize)
+        else:
+            ax3D.set_title(''.join([scheme + ' Residue']),fontsize=fontsize)
         plt.tick_params(axis='both', which='major', labelsize=fontsize)
         fig3d.set_size_inches(w=11,h=11)
         plt.savefig(file_name,dpi=300,bbox_inches='tight')
@@ -341,13 +340,13 @@ class VPINN:
         Y = tf.add(tf.matmul(H, W), b)
         return Y
 
-    def net_u(self, x, y):  
-        u = self.neural_net(tf.concat([x,y],1), self.weights, self.biases,  self.a)
-        return u
+    def net_c(self, x, y):  
+        c = self.neural_net(tf.concat([x,y],1), self.weights, self.biases,  self.a)
+        return c
     
-    def net_u_numpy(self, x, y):
-        u = self.neural_net(tf.concat([x,y],1), self.weights, self.biases,  self.a)
-        return u.eval(session=self.sess)
+    def net_c_numpy(self, x, y):
+        c = self.neural_net(tf.concat([x,y],1), self.weights, self.biases,  self.a)
+        return c.eval(session=self.sess)
 
     def net_tau(self,x,y):
         tau = 0.21
@@ -359,38 +358,38 @@ class VPINN:
         #     tau = 0.03
         return tau
     
-    def net_dxu(self, x, y):
-        u   = self.net_u(x, y)
-        d1xu = tf.gradients(u, x)[0]
-        d2xu = tf.gradients(d1xu, x)[0]
-        return d1xu, d2xu
+    def net_dxc(self, x, y):
+        c   = self.net_c(x, y)
+        d1xc = tf.gradients(c, x)[0]
+        d2xc = tf.gradients(d1xc, x)[0]
+        return d1xc, d2xc
     
-    def net_dxu_numpy(self, x, y):
-        u   = self.net_u(x, y)
-        d1xu = tf.gradients(u, x)[0]
-        d2xu = tf.gradients(d1xu, x)[0]
-        return d1xu.eval(session=self.sess), d2xu.eval(session=self.sess)
+    def net_dxc_numpy(self, x, y):
+        c   = self.net_c(x, y)
+        d1xc = tf.gradients(c, x)[0]
+        d2xc = tf.gradients(d1xc, x)[0]
+        return d1xc.eval(session=self.sess), d2xc.eval(session=self.sess)
     
 
-    def net_dyu(self, x, y):
-        u   = self.net_u(x, y)
-        d1yu = tf.gradients(u, y)[0]
-        d2yu = tf.gradients(d1yu, y)[0]
-        return d1yu, d2yu 
+    def net_dyc(self, x, y):
+        c   = self.net_c(x, y)
+        d1yc = tf.gradients(c, y)[0]
+        d2yc = tf.gradients(d1yc, y)[0]
+        return d1yc, d2yc 
 
     def net_dyu_numpy(self, x, y):
-        u   = self.net_u(x, y)
-        d1yu = tf.gradients(u, y)[0]
-        d2yu = tf.gradients(d1yu, y)[0]
-        return d1yu.eval(session=self.sess), d2yu.eval(session=self.sess)
+        c   = self.net_c(x, y)
+        d1yc = tf.gradients(c, y)[0]
+        d2yc = tf.gradients(d1yc, y)[0]
+        return d1yc.eval(session=self.sess), d2yc.eval(session=self.sess)
 
     def net_f(self, x, y):
-        u   = self.net_u(x, y)
-        d1xu = tf.gradients(u, x)[0]
-        d2xu = tf.gradients(d1xu, x)[0]
-        d1yu = tf.gradients(u, y)[0]
-        d2yu = tf.gradients(d1yu, y)[0]
-        ftemp = d2xu + d2yu
+        c   = self.net_c(x, y)
+        d1xc = tf.gradients(c, x)[0]
+        d2xc = tf.gradients(d1xc, x)[0]
+        d1yc = tf.gradients(c, y)[0]
+        d2yc = tf.gradients(d1yc, y)[0]
+        ftemp = d2xc + d2yc
         return ftemp
 
     def Test_fcnx(self, N_test,x):
@@ -427,7 +426,106 @@ class VPINN:
                 d1test_total.append(d1test)
                 d2test_total.append(d2test)    
         return np.asarray(d1test_total), np.asarray(d2test_total)
-      
+    
+###############################################################################      
+#Plot solution during training
+    def plot_c_epoch(self, epoch):
+        x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),N_test))
+        y_test_plot = np.asarray(np.split(coord_test[:,1:2].flatten(),N_test))
+        c_pred = self.predict()
+
+        
+        c_pred_plot = np.asarray(np.split(c_pred.flatten(),N_test))
+
+        fontsize = 32
+        labelsize = 26
+
+        fig_pred, ax_pred = plt.subplots(constrained_layout=True)
+        CS_pred = ax_pred.contourf(x_test_plot, y_test_plot, c_pred_plot, 100, cmap='jet', origin='lower')
+        cbar = fig_pred.colorbar(CS_pred, shrink=0.67)
+        cbar.ax.tick_params(labelsize = labelsize)
+        ax_pred.locator_params(nbins=8)
+        ax_pred.set_xlabel('$x$' , fontsize = fontsize)
+        ax_pred.set_ylabel('$y$' , fontsize = fontsize)
+        plt.tick_params( labelsize = labelsize)
+        ax_pred.set_aspect(1)
+        #fig.tight_layout()
+        fig_pred.set_size_inches(w=11,h=11)
+        plt.savefig(''.join(['Plots/Solution/Poisson2D_',scheme,'_Predict_',str(epoch),'.png']))
+        plt.close()
+
+###############################################################################
+#Calculate and plot residual during training
+    def calc_residual(self, epoch):
+
+        NE_x = self.num_element_x
+        NE_y = self.num_element_y
+        Ntest_elementx = self.num_test_x
+        Ntest_elementy = self.num_test_y
+
+
+        [x_left, x_right] = [0, 1] # Domain boundaries in x direction. Datatype: float
+        [y_bottom, y_up] = [0, 1]
+
+        delta_x    = (x_right - x_left)/NE_x
+        delta_y    = (y_up - y_bottom)/NE_y
+
+        gridx     = np.asarray([ x_left + i*delta_x for i in range(NE_x+1)])   # Datatype: numpy.ndarray, Size: (N_el_x+1,), x coordinates of grid points
+        gridy     = np.asarray([ y_bottom + i*delta_y for i in range(NE_y+1)]) # Datatype: numpy.ndarray, Size: (N_el_y+1,), y coordinates of grid points
+
+
+
+        for ex in range(self.num_element_x):
+            for ey in range(self.num_element_y):
+                x_quad_el = tf.constant(gridx[ex] + (gridx[ex+1]-gridx[ex])/2*(self.x_quad+1))
+                y_quad_el = tf.constant(gridy[ey] + (gridy[ey+1]-gridy[ey])/2*(self.y_quad+1))
+                jacobian_x     = ((gridx[ex+1]-gridx[ex])/2)                                        # jacobian in x direction. Data type: float, Size: (1)
+                jacobian_y     = ((gridy[ey+1]-gridy[ey])/2)                                        # jacobian in y direction. Data type: float, Size: (1)
+                jacobian       = ((gridx[ex+1]-gridx[ex])/2)*((gridy[ey+1]-gridy[ey])/2)            # jacobian. Data type: float, Size: (1)
+
+        d1xc_NN_numpy, d2xc_NN_numpy = self.net_dxc(x_quad_el, y_quad_el) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+        d1yc_NN_numpy, d2yc_NN_numpy = self.net_dyc(x_quad_el, y_quad_el) # first and second derivatives of the predicted values at the quadrature points. Data type: tf.tensor, Size: (N_quad,1)
+        
+        testx_quad_element = self.Test_fcnx(Ntest_elementx, self.x_quad)                              # test functions in x direction. Data type: numpy.ndarray, Size: (Ntest_elementx,N_quad)
+        d1testx_quad_element, d2testx_quad_element = self.grad_test_func(Ntest_elementx, self.x_quad) # first and second derivatives of the test functions in x direction. Data type: numpy.ndarray, Size: (Ntest_elementx,N_quad)
+        testy_quad_element = self.Test_fcny(Ntest_elementy, self.y_quad)                              # test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
+        d1testy_quad_element, d2testy_quad_element = self.grad_test_func(Ntest_elementy, self.y_quad) # first and second derivatives of the test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)        
+
+
+
+        res_galerkin = np.zeros((N_quad*N_quad,1))
+        for r in range(Ntest_elementx):
+            for k in range(Ntest_elementy):
+                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xc_NN_numpy) * eps * jacobian/jacobian_x
+
+                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yc_NN_numpy) * eps * jacobian/jacobian_y
+
+                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xc_NN_numpy) * b_x * jacobian
+
+                res_galerkin = res_galerkin + (self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1yc_NN_numpy) * b_y * jacobian
+
+        res_supg = np.zeros((N_quad*N_quad,1))
+        for r in range(Ntest_elementx):
+            for k in range(Ntest_elementy):
+                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xc_NN_numpy+d2yc_NN_numpy)*testx_quad_element[r] * testy_quad_element[k] * \
+                ( b_x * d1testx_quad_element[r] * testy_quad_element[k]  ) ) * (-1.0*eps*jacobian/jacobian_x)
+
+                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]*(d2xc_NN_numpy+d2yc_NN_numpy)*testx_quad_element[r] * testy_quad_element[k] * \
+                ( b_y * d1testy_quad_element[k] * testx_quad_element[r]  ) ) * (-1.0*eps*jacobian/jacobian_y)
+
+                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
+                (b_x * d1xc_NN_numpy + b_y * d1yc_NN_numpy) * \
+                (b_x * d1testx_quad_element[r] * testy_quad_element[k]   ) ) * (jacobian/jacobian_x)
+
+                res_supg = res_supg + (self.w_quad[:,0:1]*self.w_quad[:,1:2]  * \
+                (b_x * d1xc_NN_numpy + b_y * d1yc_NN_numpy) * \
+                (b_y * d1testy_quad_element[k] * testx_quad_element[r] ) ) * (jacobian/jacobian_y)
+
+        a = res_galerkin.eval(session=self.sess)
+        b = res_supg.eval(session=self.sess)
+        self.plot_3d(x_quad.reshape(N_quad,N_quad),y_quad.reshape(N_quad,N_quad),a.reshape(N_quad,N_quad),'Galerkin',Path(save_directory,'Residual/Galerkin/residue_galerkin_' + str(epoch) + '.png'),epoch)
+        self.plot_3d(x_quad.reshape(N_quad,N_quad),y_quad.reshape(N_quad,N_quad),b.reshape(N_quad,N_quad),'SUPG',Path(save_directory,'Residual/SUPG/residue_supg_' + str(epoch) + '.png'),epoch)
+
 
 ###############################################################################
     def train(self, nIter):
@@ -440,6 +538,9 @@ class VPINN:
         start_time   = time.time()
         for it in track(range(nIter), description='Training: '): # 
 
+            if it % 1000 == 0:
+                self.plot_c_epoch(it)
+                self.calc_residual(it)
             self.sess.run(self.train_op_Adam, tf_dict) 
 
             loss_value = self.sess.run(self.loss, tf_dict)
@@ -453,10 +554,11 @@ class VPINN:
                 str_print = ''.join(['It: %d, Loss: %.3e, Time: %.2f'])
                 print(str_print % (it, loss_value, elapsed))
                 start_time = time.time()
+            
 
     def predict(self):
-        u_pred = self.sess.run(self.c_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
-        return u_pred
+        c_pred = self.sess.run(self.c_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
+        return c_pred
 
 #%%
 ###############################################################################
@@ -464,6 +566,13 @@ class VPINN:
 #                               Main
 # =============================================================================    
 if __name__ == "__main__":     
+
+    with open("input.yaml", 'r') as f:
+        input_data = yaml.safe_load(f)
+    pdeParams = input_data['pdeParam']
+    modelParams = input_data['modelParam']
+    outputDirName = input_data['outputDirName']
+    testFileName = input_data['testFileName']
 
     '''
     Hyper-parameters: 
@@ -476,20 +585,53 @@ if __name__ == "__main__":
         N_quad     = number of quadrature points in each direction in each element
         N_bound    = number of boundary points in the boundary loss
         N_force = number of residual points in PINNs
+        N_epochs = number of epochs for which the model will be trained
     '''
+  
+
     scheme = 'VPINNs'
-    Net_layer = [2] + [20] * 3 + [1]
+    Net_layer = modelParams['Network_Arch']
     var_form  = 3
-    N_el_x = 1
-    N_el_y = 1
+    N_el_x = modelParams['Num_Element_x']
+    N_el_y = modelParams['Num_Element_y']
     N_test_x = N_el_x*[10]
     N_test_y = N_el_y*[10]
-    N_quad = 70
-    N_bound = 80
+    N_quad = modelParams['Num_Quad']
+    N_bound = modelParams['Num_Boundary']
     N_force = 100    
+    N_epochs = modelParams['N_Epochs']
+
     
 
-    ###########################################################################
+
+    '''
+    Equation Parameters:
+        eps     = diffusion parameter
+        tau     = SUPG stabilization parameter
+        b_x     = x component for convection coefficient
+        b_y     = y component for convection coefficient
+    '''
+
+    eps = pdeParams['eps']
+    
+    b_x = pdeParams['b_x']
+    b_y = pdeParams['b_y']
+
+
+    
+    #Saving output graphs
+    save_directory = Path(outputDirName)
+    os.system(f"mkdir -p {save_directory}" )
+    os.system(f"mkdir -p {Path(save_directory, 'Domain')}" )
+    os.system(f"mkdir -p {Path(save_directory,'Error')}" )
+    os.system(f"mkdir -p {Path(save_directory,'Loss')}" )
+    os.system(f"mkdir -p {Path(save_directory,'Residual')}" )
+    os.system(f"mkdir -p {Path(save_directory,'Residual','Galerkin')}" )
+    os.system(f"mkdir -p {Path(save_directory,'Residual','SUPG')}" )
+    os.system(f"mkdir -p {Path(save_directory,'Solution')}" )
+
+
+   ###########################################################################
     def testfunc_x(n,x):
         '''
         Test function in x direction
@@ -697,6 +839,7 @@ if __name__ == "__main__":
 
     for ex in range(NE_x):         # Loop over elements in x direction
         for ey in range(NE_y):     # Loop over elements in y direction
+            tau = 0
             num_testfunc_elem_x  = num_total_testfunc[0][ex] # Number of test functions in current element in x direction, Datatype: int
             num_testfunc_elem_y  = num_total_testfunc[1][ey] # Number of test functions in current element in y direction, Datatype: int
             
@@ -723,10 +866,7 @@ if __name__ == "__main__":
 
 
 
-            
-            tau = 0.1
-            b_x = 1.0
-            b_y = 0.0
+
 
             
             # \int_{\Omega} c v dx dy = \int_{\Omega} c * v_x * v_y dx dy
@@ -779,24 +919,31 @@ if __name__ == "__main__":
     
     ###########################################################################
     # Test points
+    """
     delta_test = 0.01
     xtest = np.arange(x_left, x_right + delta_test, delta_test) # Datatype: numpy.ndarray, Size: (N_test,), x coordinates of test points
     ytest = np.arange(y_bottom, y_up + delta_test, delta_test) # Datatype: numpy.ndarray, Size: (N_test,), y coordinates of test points
 
-    data_test = np.asarray([[ [xtest[i],ytest[j],c_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
+    data_test = np.asarray([[ [xtest[i],ytest[j],c_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(N_test)]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
     x_test = data_test.flatten()[0::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), x coordinates of test points
     y_test = data_test.flatten()[1::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), y coordinates of test points
     exact_c = data_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
     coord_test = np.hstack((x_test[:,None],y_test[:,None]))
     c_test = exact_c[:,None]
-
+    """
+    coord_test, exact_c = read_vtk(testFileName)
+    # x_test = xy_test[:,0:1]
+    # y_test = xy_test[:,1:2]
+    # coord_test = np.hstack((x_test[:,None],y_test[:,None]))
+    N_test = np.sqrt(coord_test.shape[0])
+    c_test = exact_c[:,None]
 
     ###########################################################################
     model = VPINN(coord_all_train, c_all_train, coord_train_force, f_train, quad_coord_train, quad_weight_train,\
-                  c_bound_total, F_ext_total, grid_x, grid_y, num_total_testfunc, coord_test, c_test, Net_layer)
-    
+                  c_bound_total, F_ext_total, grid_x, grid_y, num_total_testfunc, coord_test, c_test, Net_layer, eps, b_x, b_y,tau,save_directory)
+
     c_pred_his, loss_his = [], []
-    model.train(6000 + 1)
+    model.train(N_epochs + 1)
     c_pred = model.predict()
 
 #%%
@@ -816,7 +963,7 @@ if __name__ == "__main__":
     plt.tick_params( labelsize = 20)
     #fig.tight_layout()
     fig.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_',scheme,'_loss','.pdf']))
+    plt.savefig(Path(save_directory, 'Loss',f'Poisson2D_{scheme},_loss.pdf'))
     
     ###########################################################################
     x_train_plot, y_train_plot = zip(*coord_all_train)
@@ -844,13 +991,13 @@ if __name__ == "__main__":
     plt.tick_params( labelsize = 20)
     #fig.tight_layout()
     fig.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_',scheme,'_Domain','.pdf']))
+    plt.savefig(Path(save_directory,'Domain',f'Poisson2D_{scheme}_Domain.pdf'))
     
     ###########################################################################
-    x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),len(ytest)))
-    y_test_plot = np.asarray(np.split(coord_test[:,1:2].flatten(),len(ytest)))
-    c_test_plot = np.asarray(np.split(c_test.flatten(),len(ytest)))
-    c_pred_plot = np.asarray(np.split(c_pred.flatten(),len(ytest)))
+    x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),N_test))
+    y_test_plot = np.asarray(np.split(coord_test[:,1:2].flatten(),N_test))
+    c_test_plot = np.asarray(np.split(c_test.flatten(),N_test))
+    c_pred_plot = np.asarray(np.split(c_pred.flatten(),N_test))
     
     
     fontsize = 32
@@ -896,7 +1043,9 @@ if __name__ == "__main__":
     ax_err.set_aspect(1)
     #fig.tight_layout()
     fig_err.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_',scheme,'_PntErr','.png']))
+    plt.savefig(Path(save_directory,'Error',f'Poisson2D_{scheme}_PntErr.png'))
     
-    
+    mean_error = np.linalg.norm(c_test_plot - c_pred_plot)/(N_test**2)
+    print(f'Normalized Error:{mean_error}')
         
+# %%

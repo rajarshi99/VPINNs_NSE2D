@@ -1,0 +1,41 @@
+## -- PDE Parameters -- ##
+## All Parameters used in SUPG equation
+#
+pdeParam:
+  eps: 1    ##diffusion coefficient
+  b_x: 1    ##x component of convection coefficient
+  b_y: 0    ##y component of convection coefficient
+  f: 1    ##constant force value
+
+ 
+
+## -- Model Parameters -- ##
+modelParam:
+  N_Epochs: 100
+  Network_Arch:   ## See Notes above for proper Initialisation
+  - 2
+  - 20
+  - 20
+  - 20
+  - 1
+
+ 
+
+  Num_Boundary: 80    ## points on Boundary for trainning
+  Num_Quad: 70     ## quadrature points
+  Num_Element_x: 1    ## number of elements in x direction
+  Num_Element_y: 1    ## number of elements in y direction  
+  bound_loss_tau: 10    ##Boundary loss value of stabilization parameter   
+
+ 
+
+## -- Output -- ##
+outputDirName: 'Plots'
+
+ 
+
+## -- FEM solution vtk file -- ##
+testFileName: 'CD2D.vtk'
+
+
+
