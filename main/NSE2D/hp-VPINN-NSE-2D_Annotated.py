@@ -25,6 +25,8 @@ from rich.console import Console
 from rich.progress import track
 from rich.table import Table
 
+from read_vtk import *
+
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib import cm
 
@@ -610,7 +612,10 @@ if __name__ == "__main__":
         output: 
             - c_bound, Type: numpy.ndarray, Size: (N_bound,1)
         '''
-        u_exact = x*0.0 + y*0.0
+        if np.allclose(y,1):
+            u_exact = x*0 + 1.0
+        else:
+            u_exact = x*0.0 + y*0.0
         return u_exact
     def v_exact(x,y):
         v_exact = x*0.0 + y*0.0
@@ -822,6 +827,7 @@ if __name__ == "__main__":
     
     ###########################################################################
     # Test points
+    """
     delta_test = 0.01
     xtest = np.arange(x_left, x_right + delta_test, delta_test) # Datatype: numpy.ndarray, Size: (N_test,), x coordinates of test points
     ytest = np.arange(y_bottom, y_up + delta_test, delta_test) # Datatype: numpy.ndarray, Size: (N_test,), y coordinates of test points
@@ -829,6 +835,7 @@ if __name__ == "__main__":
     U_test = np.asarray([[ [xtest[i],ytest[j],u_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
     x_test = U_test.flatten()[0::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), x coordinates of test points
     y_test = U_test.flatten()[1::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), y coordinates of test points
+
     exact_u = U_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
     coord_test = np.hstack((x_test[:,None],y_test[:,None]))
     u_test = exact_u[:,None]
@@ -840,16 +847,20 @@ if __name__ == "__main__":
     P_test = np.asarray([[ [xtest[i],ytest[j],p_exact(xtest[i],ytest[j])] for i in range(len(xtest))] for j in range(len(ytest))]) # Datatype: numpy.ndarray, Size: (N_test, N_test, 3), x and y coordinates of test points and the exact solution at test points
     exact_p = P_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
     p_test = exact_p[:,None]
+    """
 
-
-
+    coord_test, exact_u, exact_v, exact_p = read_vtk('NSE2D.vtk')
+    u_test = exact_u[:,None]
+    v_test = exact_v[:,None]
+    p_test = exact_p[:,None]
+    N_test = np.sqrt(coord_test.shape[0])
 
     ###########################################################################
     model = VPINN(coord_all_train, u_all_train,v_all_train, coord_train_force, f_1_train, f_2_train, quad_coord_train, quad_weight_train,\
                  F_1_ext_total, F_2_ext_total, grid_x, grid_y, num_total_testfunc, coord_test, u_test,v_test,p_test, Net_layer)
     
     vec_pred_his, loss_his = [], []
-    model.train(50000 + 1)
+    model.train(200 + 1)
     u_pred = model.predict_u()
     v_pred = model.predict_v()
     p_pred = model.predict_p()
@@ -902,12 +913,15 @@ if __name__ == "__main__":
     plt.savefig(''.join(['Poisson2D_',scheme,'_Domain','.pdf']))
     
     ###########################################################################
-    x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),len(ytest)))
-    y_test_plot = np.asarray(np.split(coord_test[:,1:2].flatten(),len(ytest)))
-    u_pred_plot = np.asarray(np.split(u_pred.flatten(),len(ytest)))
-    v_pred_plot = np.asarray(np.split(v_pred.flatten(),len(ytest)))
-    p_pred_plot = np.asarray(np.split(p_pred.flatten(),len(ytest)))
+    x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),N_test))
+    y_test_plot = np.asarray(np.split(coord_test[:,1:2].flatten(),N_test))
+    u_pred_plot = np.asarray(np.split(u_pred.flatten(),N_test))
+    v_pred_plot = np.asarray(np.split(v_pred.flatten(),N_test))
+    p_pred_plot = np.asarray(np.split(p_pred.flatten(),N_test))
 
+    u_test_plot = np.asarray(np.split(u_test.flatten(),N_test))
+    v_test_plot = np.asarray(np.split(v_test.flatten(),N_test))
+    p_test_plot = np.asarray(np.split(p_test.flatten(),N_test))
     
     
     fontsize = 32
@@ -955,7 +969,89 @@ if __name__ == "__main__":
     fig_pred_p.set_size_inches(w=11,h=11)
     plt.savefig(''.join(['Poisson2D_P_',scheme,'_Predict','.png']))
     
-   
+    fig_pred_u, ax_pred_u = plt.subplots(constrained_layout=True)
+    CS_pred = ax_pred_u.contourf(x_test_plot, y_test_plot, abs(u_pred_plot - u_test_plot), 100, cmap='jet', origin='lower')
+    cbar = fig_pred_u.colorbar(CS_pred, shrink=0.67)
+    cbar.ax.tick_params(labelsize = labelsize)
+    ax_pred_u.locator_params(nbins=8)
+    ax_pred_u.set_xlabel('$x$' , fontsize = fontsize)
+    ax_pred_u.set_ylabel('$y$' , fontsize = fontsize)
+    plt.tick_params( labelsize = labelsize)
+    ax_pred_u.set_aspect(1)
+    #fig.tight_layout()
+    fig_pred_u.set_size_inches(w=11,h=11)
+    plt.savefig(''.join(['Poisson2D_U_',scheme,'_PntErr','.png']))
     
+    fig_pred_v, ax_pred_v = plt.subplots(constrained_layout=True)
+    CS_pred = ax_pred_v.contourf(x_test_plot, y_test_plot, abs(v_pred_plot - v_test_plot), 100, cmap='jet', origin='lower')
+    cbar = fig_pred_v.colorbar(CS_pred, shrink=0.67)
+    cbar.ax.tick_params(labelsize = labelsize)
+    ax_pred_v.locator_params(nbins=8)
+    ax_pred_v.set_xlabel('$x$' , fontsize = fontsize)
+    ax_pred_v.set_ylabel('$y$' , fontsize = fontsize)
+    plt.tick_params( labelsize = labelsize)
+    ax_pred_v.set_aspect(1)
+    #fig.tight_layout()
+    fig_pred_v.set_size_inches(w=11,h=11)
+    plt.savefig(''.join(['Poisson2D_V_',scheme,'_PntErr','.png']))
+
+    fig_pred_p, ax_pred_p = plt.subplots(constrained_layout=True)
+    CS_pred = ax_pred_p.contourf(x_test_plot, y_test_plot, abs(p_pred_plot - p_test_plot), 100, cmap='jet', origin='lower')
+    cbar = fig_pred_p.colorbar(CS_pred, shrink=0.67)
+    cbar.ax.tick_params(labelsize = labelsize)
+    ax_pred_p.locator_params(nbins=8)
+    ax_pred_p.set_xlabel('$x$' , fontsize = fontsize)
+    ax_pred_p.set_ylabel('$y$' , fontsize = fontsize)
+    plt.tick_params( labelsize = labelsize)
+    ax_pred_p.set_aspect(1)
+    #fig.tight_layout()
+    fig_pred_p.set_size_inches(w=11,h=11)
+    plt.savefig(''.join(['Poisson2D_P_',scheme,'_PntErr','.png']))
+
+    fig_pred_u, ax_pred_u = plt.subplots(constrained_layout=True)
+    CS_pred = ax_pred_u.contourf(x_test_plot, y_test_plot, abs(u_pred_plot - u_test_plot), 100, cmap='jet', origin='lower')
+    cbar = fig_pred_u.colorbar(CS_pred, shrink=0.67)
+    cbar.ax.tick_params(labelsize = labelsize)
+    ax_pred_u.locator_params(nbins=8)
+    ax_pred_u.set_xlabel('$x$' , fontsize = fontsize)
+    ax_pred_u.set_ylabel('$y$' , fontsize = fontsize)
+    plt.tick_params( labelsize = labelsize)
+    ax_pred_u.set_aspect(1)
+    #fig.tight_layout()
+    fig_pred_u.set_size_inches(w=11,h=11)
+    plt.savefig(''.join(['Poisson2D_U_',scheme,'_Exact','.png']))
     
-        
+    fig_pred_v, ax_pred_v = plt.subplots(constrained_layout=True)
+    CS_pred = ax_pred_v.contourf(x_test_plot, y_test_plot, abs(v_pred_plot - v_test_plot), 100, cmap='jet', origin='lower')
+    cbar = fig_pred_v.colorbar(CS_pred, shrink=0.67)
+    cbar.ax.tick_params(labelsize = labelsize)
+    ax_pred_v.locator_params(nbins=8)
+    ax_pred_v.set_xlabel('$x$' , fontsize = fontsize)
+    ax_pred_v.set_ylabel('$y$' , fontsize = fontsize)
+    plt.tick_params( labelsize = labelsize)
+    ax_pred_v.set_aspect(1)
+    #fig.tight_layout()
+    fig_pred_v.set_size_inches(w=11,h=11)
+    plt.savefig(''.join(['Poisson2D_V_',scheme,'_Exact','.png']))
+
+    fig_pred_p, ax_pred_p = plt.subplots(constrained_layout=True)
+    CS_pred = ax_pred_p.contourf(x_test_plot, y_test_plot, abs(p_pred_plot - p_test_plot), 100, cmap='jet', origin='lower')
+    cbar = fig_pred_p.colorbar(CS_pred, shrink=0.67)
+    cbar.ax.tick_params(labelsize = labelsize)
+    ax_pred_p.locator_params(nbins=8)
+    ax_pred_p.set_xlabel('$x$' , fontsize = fontsize)
+    ax_pred_p.set_ylabel('$y$' , fontsize = fontsize)
+    plt.tick_params( labelsize = labelsize)
+    ax_pred_p.set_aspect(1)
+    #fig.tight_layout()
+    fig_pred_p.set_size_inches(w=11,h=11)
+    plt.savefig(''.join(['Poisson2D_P_',scheme,'_Exact','.png']))
+
+    u_mean_error = np.linalg.norm(u_test_plot - u_pred_plot)/(N_test**2)
+    v_mean_error = np.linalg.norm(v_test_plot - v_pred_plot)/(N_test**2)
+    p_mean_error = np.linalg.norm(p_test_plot - p_pred_plot)/(N_test**2)
+    print(f'Normalized Error in u:{u_mean_error}')
+    print(f'Normalized Error in v:{v_mean_error}')
+    print(f'Normalized Error in p:{p_mean_error}')
+    
+    print(len(u_test_plot), u_test_plot.shape)
