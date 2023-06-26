@@ -8,3 +8,5 @@ pyenv.config
 main/.vscode/
 *.png
 *.pdf
+*.pyc
+*.vtk
