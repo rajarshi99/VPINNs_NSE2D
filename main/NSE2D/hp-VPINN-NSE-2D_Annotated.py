@@ -25,10 +25,15 @@ from rich.console import Console
 from rich.progress import track
 from rich.table import Table
 from pathlib import Path
-from read_vtk import *
+from read_vtk_nse import *
+import yaml
 
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib import cm
+import sys
+import os
+import mlflow
+from datetime import datetime
 
 
 np.random.seed(1234)
@@ -57,7 +62,7 @@ def get_variable_info(variable):
 # %%
 class VPINN:
     def __init__(self, coord_bound_train, u_bound_train, v_bound_train, coord_train_force, f_1_train, f_2_train, coord_quad_train, quad_weight_train, F_1_exact_total, F_2_exact_total,\
-                 gridx, gridy, num_total_testfunc,coord_test, u_test,v_test,p_test, layers):
+                 gridx, gridy, num_total_testfunc,coord_test, u_test,v_test,p_test, layers,input_data):
 
         self.x_bound = coord_bound_train[:,0:1] # boundary points in x direction. Data type: numpy.ndarray, Size: (4*N_bound,1)
         self.y_bound = coord_bound_train[:,1:2] # boundary points in y direction. Data type: numpy.ndarray, Size: (4*N_bound,1)
@@ -87,8 +92,23 @@ class VPINN:
 
         self.F_1_ext_total = F_1_exact_total                    # exact force values. Data type: numpy.ndarray, Size: (N_bound,1)
         self.F_2_ext_total = F_2_exact_total                    # exact force values. Data type: numpy.ndarray, Size: (N_bound,1)
+        
+        # add input Data 
+        self.input_data = input_data
+        # add output folder
+        self.output_folder = self.input_data["experimental_params"]["output_folder"]
+        
+        # Generate one more folder for saving the model
+        if not os.path.exists(self.output_folder + '/models'):
+            os.makedirs(self.output_folder + '/models')
 
-       
+        # assign the current path to model_save_path
+        self.model_save_path = self.output_folder + '/models'
+        
+        # intialse total train time to zero
+        self.total_train_time = 0
+
+        
         self.layers = layers                                # neural network structure. Data type: list, Size: (num_layers+1,1)
         self.weights, self.biases, self.a = self.initialize_NN(layers) # initialize the weights and biases of the neural network
         
@@ -108,7 +128,9 @@ class VPINN:
         self.y_test_tensor = tf.placeholder(tf.float64, shape=[None, self.y_test.shape[1]]) # test points in y direction. Data type: tf.placeholder, Size: (N_test,1)
         self.x_quad_tensor = tf.placeholder(tf.float64, shape=[None, self.x_quad.shape[1]]) # quadrature points in x direction. Data type: tf.placeholder, Size: (N_quad,1)
         self.y_quad_tensor = tf.placeholder(tf.float64, shape=[None, self.y_quad.shape[1]]) # quadrature points in y direction. Data type: tf.placeholder, Size: (N_quad,1)
-
+        
+        
+        
 
 
         self.sess = tf.Session() # initialize the tensorflow session
@@ -159,17 +181,19 @@ class VPINN:
                 d1testy_quad_element, d2testy_quad_element = self.grad_test_func(Ntest_elementy, self.y_quad) # first and second derivatives of the test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
 
 
-                
+                ## Collect the Reynolds number from the input_data(yaml) file
+                self.Re = self.input_data["bilinear_coefficients"]["re_nr"]
     
                 if var_form == 3:
                     
-                    U_NN_element_diff_1 = tf.convert_to_tensor([[self.mew*jacobian/jacobian_x*tf.reduce_sum(\
+                    
+                    U_NN_element_diff_1 = tf.convert_to_tensor([[(1.0/self.Re)*jacobian/jacobian_x*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
                     
 
-                    U_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                    U_NN_element_diff_2 = tf.convert_to_tensor([[(1.0/self.Re)*jacobian/jacobian_y*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
@@ -181,10 +205,10 @@ class VPINN:
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
                     
-                    V_NN_element_diff_1 = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
+                    V_NN_element_diff_1 = tf.convert_to_tensor([[(1.0/self.Re)*jacobian/jacobian_x*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xv_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                    V_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                    V_NN_element_diff_2 = tf.convert_to_tensor([[(1.0/self.Re)*jacobian/jacobian_y*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yv_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
 
@@ -221,21 +245,32 @@ class VPINN:
                 loss_element_2 = tf.reduce_mean(tf.square(Res_NN_element_2)) # loss function. Data type: tf.tensor, Size: (1,1)
                 loss_element_3 = tf.reduce_mean(tf.square(Res_NN_element_3)) # loss function. Data type: tf.tensor, Size: (1,1)
                 loss_element_4 = tf.reduce_mean(tf.square(Res_NN_element_4)) # loss function. Data type: tf.tensor, Size: (1,1)
-                self.varloss_total = self.varloss_total + loss_element_1 + loss_element_2 + loss_element_3
+                
+                self.pressure_correction = input_data["model_run_params"]["pressure_correction"]
+                if(self.pressure_correction == True):
+                    self.varloss_total = self.varloss_total + loss_element_1 + loss_element_2 + loss_element_3 + loss_element_4
+                else:
+                    self.varloss_total = self.varloss_total + loss_element_1 + loss_element_2 + loss_element_3
+                    print("Pressure correction is not applied")
  
         self.lossb = tf.reduce_mean(tf.square(self.u_bound_tensor - self.u_pred_boundary)) + tf.reduce_mean(tf.square(self.v_bound_tensor - self.v_pred_boundary)) # loss function. Data type: tf.tensor, Size: (1,1)
         self.lossv = self.varloss_total # 
 
         # self.lossp= tf.reduce_mean(tf.square(self.f_pred - self.ftrain))
        #   
+        boundary_loss_tau = input_data["model_run_params"]["boundary_loss_tau"]
+
+        
         if scheme == 'VPINNs': # 
 
-            self.loss  = 10*self.lossb + self.lossv  
+            self.loss  = boundary_loss_tau*self.lossb + self.lossv  
 
         if scheme == 'PINNs':
-            self.loss  = 10*self.lossb + self.lossp 
+            self.loss  = boundary_loss_tau*self.lossb + self.lossp 
         
-        self.optimizer_Adam = tf.train.AdamOptimizer(0.001)
+        learning_rate = self.input_data["model_run_params"]["learning_rate"]
+
+        self.optimizer_Adam = tf.train.AdamOptimizer(learning_rate)
         self.train_op_Adam = self.optimizer_Adam.minimize(self.loss)
     #    self.sess = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
         self.init = tf.global_variables_initializer()
@@ -408,6 +443,11 @@ class VPINN:
                 d1test_total.append(d1test)
                 d2test_total.append(d2test)    
         return np.asarray(d1test_total), np.asarray(d2test_total)
+
+    def save_model(self, path,iteration):
+        saver = tf.compat.v1.train.Saver()
+        save_path = saver.save(self.sess, path+ '/model_{}'.format(iteration))
+        print("Model saved in file: %s" % save_path)
       
 
 ###############################################################################
@@ -432,9 +472,13 @@ class VPINN:
 #                u_pred_his.append(u_pred)
             if it % 100 == 0:
                 elapsed = time.time() - start_time 
+                self.total_train_time += elapsed
                 str_print = ''.join(['It: %d, Loss: %.3e, Time: %.2f'])
                 print(str_print % (it, loss_value, elapsed))
                 start_time = time.time()
+            
+            if it % self.input_data["model_save_params"]["save_frequency"] == 0 and it != 0:
+                self.save_model(self.model_save_path,it)
 
     def predict_u(self):
         u_pred = self.sess.run(self.u_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
@@ -464,19 +508,42 @@ if __name__ == "__main__":
         N_bound    = number of boundary points in the boundary loss
         N_force = number of residual points in PINNs
     '''
-    scheme = 'VPINNs'
-    Net_layer = [2] + [20] * 3 + [3] # Network structure
-
-    var_form  = 3
-    N_el_x = 1
-    N_el_y = 1
-    N_test_x = N_el_x*[10]
-    N_test_y = N_el_y*[10]
-    N_quad = 70
-    N_bound = 80
-    N_force = 100    
     
+    # Exit program if the input arguments is less than 2
+    if len(sys.argv) < 2:
+        print('Error: need to specify the input.yaml file')
+        exit(0)
+    
+    # read the input.yaml file
+    with open(sys.argv[1], 'r') as f:
+        input_data = yaml.safe_load(f)
+    
+    # Hardcoded -- Do not change
+    scheme = 'VPINNs'
+    
+    
+    # Net_layer = [2] + [20] * 3 + [3] # Network structure
+    Net_layer = input_data["model_run_params"]["NN_model"]
 
+
+    # Hardcoded -- Do not change
+    var_form = 3
+
+
+    N_el_x = input_data["model_run_params"]["num_elements_x"]
+    N_el_y = input_data["model_run_params"]["num_elements_y"]
+
+
+    N_shape_functions_per_element_x = input_data["model_run_params"]["num_shape_functions_x"]
+    N_shape_functions_per_element_y = input_data["model_run_params"]["num_shape_functions_y"]
+    N_test_x = N_el_x * [N_shape_functions_per_element_x]
+    N_test_y = N_el_y * [N_shape_functions_per_element_y]
+
+    N_quad = input_data["model_run_params"]["num_quad_points"]
+    N_bound = input_data["model_run_params"]["num_bound_points"]
+    N_force = input_data["model_run_params"]["num_residual_points"]
+
+    
     ###########################################################################
     def testfunc_x(n,x):
         '''
@@ -847,8 +914,9 @@ if __name__ == "__main__":
     exact_p = P_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
     p_test = exact_p[:,None]
     """
+    exact_solution_vtk = input_data["model_run_params"]["exact_solution_vtk"]
 
-    coord_test, exact_u, exact_v, exact_p = read_vtk('../../FEM.00001.vtk')
+    coord_test, exact_u, exact_v, exact_p,index = read_vtk(exact_solution_vtk)
     u_test = exact_u[:,None]
     v_test = exact_v[:,None]
     p_test = exact_p[:,None]
@@ -856,10 +924,13 @@ if __name__ == "__main__":
 
     ###########################################################################
     model = VPINN(coord_all_train, u_all_train,v_all_train, coord_train_force, f_1_train, f_2_train, quad_coord_train, quad_weight_train,\
-                 F_1_ext_total, F_2_ext_total, grid_x, grid_y, num_total_testfunc, coord_test, u_test,v_test,p_test, Net_layer)
+                 F_1_ext_total, F_2_ext_total, grid_x, grid_y, num_total_testfunc, coord_test, u_test,v_test,p_test, Net_layer, input_data)
     
     vec_pred_his, loss_his = [], []
-    model.train(50000 + 1)
+    max_iterations = input_data["model_run_params"]["max_iter"]
+
+    model.train(max_iterations + 1)
+    
     u_pred = model.predict_u()
     v_pred = model.predict_v()
     p_pred = model.predict_p()
@@ -888,7 +959,8 @@ if __name__ == "__main__":
     fem_solution_u2_final = np.vstack((fem_u2_cord[:,0],fem_u2_sol)).T
     
     # TO CHANGE
-    output_path = "output_01"
+    output_path =input_data["experimental_params"]["output_folder"]
+
     # Add output path to the current directory using Path 
     output_path = Path.cwd() / output_path
     
@@ -901,8 +973,12 @@ if __name__ == "__main__":
     norm_ghia_u =  plot_ghia_u(f"{output_path}/u1_ghia",u_pred_ghia,fem_solution_u1_final)
     norm_ghia_v = plot_ghia_v(f"{output_path}/u2_ghia",u_pred_ghia,fem_solution_u2_final)
     
+    # Write the final solution as vtk file
+    vtk_base_name = input_data["experimental_params"]["vtk_base_name"]
+
+    write_vtk(u_pred,v_pred,p_pred,coord_test,f"{output_path}/{vtk_base_name}.vtk",exact_solution_vtk,index)
     
-    
+ 
 
 #%%
     ###########################################################################
@@ -1086,12 +1162,88 @@ if __name__ == "__main__":
     ])
 
     # save errors to CSV file
-    np.savetxt(f'{output_path}/errors.csv', errors, delimiter=',', fmt='%s')
+    np.savetxt(f'{output_path}/pointwise_errors.csv', errors, delimiter=',', fmt='%s')
 
     # Save the Ghia et all errors to csv file
     # save the errors to a CSV file
-    errors = np.array([norm_ghia_u, norm_ghia_v])
-    np.savetxt(f"{output_path}/ghia_errors", errors, delimiter=",")
+    ghia_errors = np.array([norm_ghia_u, norm_ghia_v])
+    np.savetxt(f"{output_path}/ghia_errors.csv", ghia_errors, delimiter=",")
     
+    # Save the pinns predicted solution to the csv file
+    np.savez(f"{output_path}/solution_data.npz", x_test_plot=x_test_plot, y_test_plot=y_test_plot, u_test_plot=u_test_plot, u_pred_plot=u_pred_plot, v_test_plot=v_test_plot, v_pred_plot=v_pred_plot, p_test_plot=p_test_plot, p_pred_plot=p_pred_plot)
+    
+    
+    # if use mlflow
+    if input_data['mlflow_parameters']['use_mlflow']:
+        print("MLflow Version:", mlflow.version.VERSION)
+        print("Tracking URI:", mlflow.tracking.get_tracking_uri())
+        mlflow.set_experiment(f"{input_data['mlflow_parameters']['mlflow_experiment_name']}")
+
+
+        # Setname
+        mlflow_run_prefix = input_data["mlflow_parameters"]["mlflow_run_prefix"]
+        
+        # Get the current date and time as a string
+        now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        
+        # Set mlflow run name
+        mlflow.set_tag("mlflow.runName", mlflow_run_prefix + "_" + str(now))
+        
+        # create a plot directory
+        os.system(f"mkdir -p {output_path}/plots")
+        os.system(f"mv {output_path}/*png {output_path}/*pdf {output_path}/*eps  {output_path}/plots")
+        
+        # Save the final numpy arrays
+        os.system(f"mkdir -p {output_path}/solution_arrays")
+        
+        # move the solution arrays to the solution_arrays directory
+        os.system(f"mv {output_path}/*.npz {output_path}/solution_arrays")
+        os.system(f"mv {output_path}/*.csv {output_path}/solution_arrays")
+        
+        # move the yaml file 
+        os.system(f"cp {sys.argv[1]} {output_path}/{sys.argv[1]}")
+        
+        # Log the other metrics
+        mlflow.log_metric("loss", loss_his[-1])
+        mlflow.log_metric("train_time", model.total_train_time)
+        mlflow.log_metric("time_per_iter", model.total_train_time/input_data["model_run_params"]["max_iter"])
+        
+        # Log the GHIA Et all l2 error as metric
+        mlflow.log_metric("ghia_u_l2_error", norm_ghia_u[3])
+        mlflow.log_metric("ghia_v_l2_error", norm_ghia_v[3])
+        
+        # VTK Files 
+        os.system(f"mkdir -p {output_path}/vtk_files")
+        os.system(f"mv {output_path}/*.vtk {output_path}/vtk_files")
+        os.system(f"cp {exact_solution_vtk} {output_path}/vtk_files")
+        
+        # Log the time
+        mlflow.log_param("date", now)
+        
+        # Log the parameters from the YAML file
+        mlflow.log_param("max_iter", input_data["model_run_params"]["max_iter"])
+        mlflow.log_param("NN_model", input_data["model_run_params"]["NN_model"])
+        mlflow.log_param("boundary_loss_tau", input_data["model_run_params"]["boundary_loss_tau"])
+        mlflow.log_param("num_quad_points", input_data["model_run_params"]["num_quad_points"])
+        mlflow.log_param("num_bound_points", input_data["model_run_params"]["num_bound_points"])
+        mlflow.log_param("num_residual_points", input_data["model_run_params"]["num_residual_points"])
+        mlflow.log_param("num_elements_x", input_data["model_run_params"]["num_elements_x"])
+        mlflow.log_param("num_elements_y", input_data["model_run_params"]["num_elements_y"])
+        mlflow.log_param("num_shape_functions_x", input_data["model_run_params"]["num_shape_functions_x"])
+        mlflow.log_param("num_shape_functions_y", input_data["model_run_params"]["num_shape_functions_y"])
+        mlflow.log_param("learning_rate", input_data["model_run_params"]["learning_rate"])
+        mlflow.log_param("pressure_correction", input_data["model_run_params"]["pressure_correction"])
+        
+        
+        mlflow.log_artifact(f"{output_path}/plots",artifact_path="plots")
+        mlflow.log_artifact(f"{output_path}/vtk_files",artifact_path="vtk_files")
+        mlflow.log_artifact(f"{output_path}/{sys.argv[1]}")
+        mlflow.log_artifact(f"{output_path}/models",artifact_path="models")
+        mlflow.log_artifact(f"{output_path}/solution_arrays",artifact_path="solution_arrays")
+        
+        
+        
+        
+        
 
 # %%

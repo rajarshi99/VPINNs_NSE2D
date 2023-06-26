@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def read_vtk(vtk_file_name = 'Mean_NRealisations_500.00052.vtk'):
+def read_vtk(vtk_file_name):
     with open(vtk_file_name, 'r') as fin:
         vtk = fin.read()
 
@@ -37,11 +37,11 @@ def read_vtk(vtk_file_name = 'Mean_NRealisations_500.00052.vtk'):
     uv_vals = uv_vals[ind]
     p_vals = p_vals[ind]
 
-    return xy_coords, uv_vals[:,0], uv_vals[:,1], p_vals
+    return xy_coords, uv_vals[:,0], uv_vals[:,1], p_vals, ind
 
 # Function genertates the co-ordinates for ghia's benchmark on x direction
 def generate_ghia_point_u1():
-    data = np.genfromtxt("../../ghia_u.csv")
+    data = np.genfromtxt("data/ghia_u.csv")
     
     y = data[:,0]
     x = np.ones_like(y)*0.5
@@ -53,7 +53,7 @@ def generate_ghia_point_u1():
 
 # Function genertates the co-ordinates for ghia's benchmark on y direction
 def generate_ghia_point_u2():
-    data = np.genfromtxt("../../ghia_v.csv")
+    data = np.genfromtxt("data/ghia_v.csv")
     
     x = data[:,0]
     y = np.ones_like(x)*0.5
@@ -67,7 +67,7 @@ def generate_ghia_point_u2():
 
 def plot_ghia_u(filename,solution_pinns, solution_fem):
     # extract solution from the ghia_u.csv file
-    data = np.genfromtxt("../../ghia_u.csv")
+    data = np.genfromtxt("data/ghia_u.csv")
 
     y = data[:,0]
     u1 = data[:,1]
@@ -110,7 +110,7 @@ def plot_ghia_u(filename,solution_pinns, solution_fem):
 
 def plot_ghia_v(filename,solution_pinns, solution_fem):
     # extract solution from the ghia_v.csv file
-    data = np.genfromtxt("../../ghia_v.csv")
+    data = np.genfromtxt("data/ghia_v.csv")
 
     x = data[:,0]
     v1 = data[:,1]
@@ -148,8 +148,56 @@ def plot_ghia_v(filename,solution_pinns, solution_fem):
     print(f"l_inf_norm_pinns_ghia_u = {l_inf_norm_pinns_ghia}")
     
     return errors
+
+# Write a vtk file for the solution
+def write_vtk(u_pred,v_pred,p_pred,coord_test,output_vtk_name,basevtk,index):
     
+    # using mesh io library write a vtk file with the coordinates and the solution
+    with open(basevtk, 'r') as fin:
+        vtk = fin.read()
+
+    lines = np.array(vtk.split('\n'))
+
+    for l_num in range(len(lines)):
+        line = lines[l_num]
+        line = line.strip() 
+        values = line.split(' ')
+        if values[0] == 'POINT_DATA':
+            n_dof = int(values[1])
+            break
     
+    new_vtk_file_lines = lines[:l_num+1].copy().tolist()
+    # Fill the scalar solutions to the vtk file
+    solution_array = [u_pred,v_pred,p_pred]
+    notation_array = ['u','v','p']
     
+    # reverse index
+    reverse_index = np.argsort(index)
     
+    for solution,notation in zip(solution_array,notation_array):
+        new_vtk_file_lines.append(f"SCALARS {notation} double")
+        new_vtk_file_lines.append("LOOKUP_TABLE default")
+        solution = solution.reshape(n_dof)
+        # Sort the solution based on reverse index
+        solution = solution[reverse_index]
+        for i in range(n_dof):
+            new_vtk_file_lines.append(f"{solution[i]:.6f}")
     
+    # vector Array for velocity
+    new_vtk_file_lines.append(f"VECTORS U double")
+    u_pred = u_pred.reshape(n_dof)
+    v_pred = v_pred.reshape(n_dof)
+    # Sort the solution based on reverse index
+    u_pred = u_pred[reverse_index]
+    v_pred = v_pred[reverse_index]
+    for i in range(n_dof):
+        new_vtk_file_lines.append(f"{u_pred[i]:.8e} {v_pred[i]:.8e} 0.0")
+    
+    # append contents of the list with new line at end into a new string
+    new_vtk_file_contents = '\n'.join(new_vtk_file_lines)
+    
+    # write to the new vtk file
+    with open(output_vtk_name, 'w') as fout:
+        fout.write(new_vtk_file_contents)
+    
+    pass
