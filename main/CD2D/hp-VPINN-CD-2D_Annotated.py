@@ -935,7 +935,7 @@ if __name__ == "__main__":
     # x_test = xy_test[:,0:1]
     # y_test = xy_test[:,1:2]
     # coord_test = np.hstack((x_test[:,None],y_test[:,None]))
-    N_test = 33
+    N_test = np.sqrt(coord_test.shape[0])
     c_test = exact_c[:,None]
 
     ###########################################################################
@@ -1043,9 +1043,9 @@ if __name__ == "__main__":
     ax_err.set_aspect(1)
     #fig.tight_layout()
     fig_err.set_size_inches(w=11,h=11)
-    plt.savefig(Path(save_directory,'Error',f'Poisson2D_{scheme}_RelPntErr.png'))
+    plt.savefig(Path(save_directory,'Error',f'Poisson2D_{scheme}_PntErr.png'))
     
-    rel_err = np.linalg.norm(c_test_plot - c_pred_plot)/np.linalg.norm(c_test_plot)
-    print(f'Normalized Error:{rel_err}')
+    mean_error = np.linalg.norm(c_test_plot - c_pred_plot)/(N_test**2)
+    print(f'Normalized Error:{mean_error}')
         
 # %%
