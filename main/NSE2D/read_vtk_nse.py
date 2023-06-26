@@ -191,6 +191,7 @@ def write_vtk(u_pred,v_pred,p_pred,coord_test,output_vtk_name,basevtk,index,exac
         # Sort the solution based on reverse index
         solution = solution[reverse_index]
         actual_solution = exact_u if notation == 'u' else exact_v if notation == 'v' else exact_p  # get the corresponding exact solution
+        actual_solution = actual_solution.copy().reshape(n_dof)
         error = np.abs(solution-actual_solution)
         for i in range(n_dof):
             new_vtk_file_lines.append(f"{error[i]:.6f}")
