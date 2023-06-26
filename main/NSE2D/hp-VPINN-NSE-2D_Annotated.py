@@ -268,9 +268,23 @@ class VPINN:
         if scheme == 'PINNs':
             self.loss  = boundary_loss_tau*self.lossb + self.lossp 
         
-        learning_rate = self.input_data["model_run_params"]["learning_rate"]
+        self.learning_rate = self.input_data["model_run_params"]["learning_rate"]
 
-        self.optimizer_Adam = tf.train.AdamOptimizer(learning_rate)
+        if(self.input_data["lr_scheduler"]["use_lr_scheduler"] == False):
+            self.optimizer_Adam = tf.train.AdamOptimizer(self.learning_rate)
+        else:
+            # Use a Learning Rate scheduler
+            self.global_step = tf.Variable(0, trainable=False)
+            self.decay_steps = self.input_data["lr_scheduler"]["decay_steps"]
+            self.decay_rate = self.input_data["lr_scheduler"]["decay_rate"]
+            self.initial_learning_rate = self.input_data["lr_scheduler"]["initial_lr"]
+            
+            self.learning_rate = tf.train.exponential_decay(self.initial_learning_rate, self.global_step, self.decay_steps, self.decay_rate, staircase=True)
+            
+            self.optimizer_Adam = tf.train.AdamOptimizer(self.learning_rate)
+            
+            
+            
         self.train_op_Adam = self.optimizer_Adam.minimize(self.loss)
     #    self.sess = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
         self.init = tf.global_variables_initializer()
@@ -976,7 +990,7 @@ if __name__ == "__main__":
     # Write the final solution as vtk file
     vtk_base_name = input_data["experimental_params"]["vtk_base_name"]
 
-    write_vtk(u_pred,v_pred,p_pred,coord_test,f"{output_path}/{vtk_base_name}.vtk",exact_solution_vtk,index)
+    write_vtk(u_pred,v_pred,p_pred,coord_test,f"{output_path}/{vtk_base_name}.vtk",exact_solution_vtk,index,exact_u, exact_v, exact_p)
     
  
 
@@ -1234,6 +1248,14 @@ if __name__ == "__main__":
         mlflow.log_param("learning_rate", input_data["model_run_params"]["learning_rate"])
         mlflow.log_param("pressure_correction", input_data["model_run_params"]["pressure_correction"])
         
+        
+        if(input_data["lr_scheduler"]["use_lr_scheduler"] == True):
+            mlflow.log_param("lr_scheduler", input_data["lr_scheduler"]["decay_rate"])
+            mlflow.log_param("decay_rate", input_data["lr_scheduler"]["decay_rate"])
+            mlflow.log_param("decay_steps", input_data["lr_scheduler"]["decay_steps"])
+            mlflow.log_param("initial_lr", input_data["lr_scheduler"]["initial_lr"])
+
+            
         
         mlflow.log_artifact(f"{output_path}/plots",artifact_path="plots")
         mlflow.log_artifact(f"{output_path}/vtk_files",artifact_path="vtk_files")

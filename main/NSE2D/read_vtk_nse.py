@@ -150,7 +150,7 @@ def plot_ghia_v(filename,solution_pinns, solution_fem):
     return errors
 
 # Write a vtk file for the solution
-def write_vtk(u_pred,v_pred,p_pred,coord_test,output_vtk_name,basevtk,index):
+def write_vtk(u_pred,v_pred,p_pred,coord_test,output_vtk_name,basevtk,index,exact_u, exact_v, exact_p):
     
     # using mesh io library write a vtk file with the coordinates and the solution
     with open(basevtk, 'r') as fin:
@@ -177,16 +177,28 @@ def write_vtk(u_pred,v_pred,p_pred,coord_test,output_vtk_name,basevtk,index):
     for solution,notation in zip(solution_array,notation_array):
         new_vtk_file_lines.append(f"SCALARS {notation} double")
         new_vtk_file_lines.append("LOOKUP_TABLE default")
-        solution = solution.reshape(n_dof)
+        solution = solution.copy().reshape(n_dof)
         # Sort the solution based on reverse index
         solution = solution[reverse_index]
         for i in range(n_dof):
             new_vtk_file_lines.append(f"{solution[i]:.6f}")
     
+    # Plot the Errors also
+    for solution,notation in zip(solution_array,notation_array):
+        new_vtk_file_lines.append(f"SCALARS {notation}_error double")
+        new_vtk_file_lines.append("LOOKUP_TABLE default")
+        solution = solution.copy().reshape(n_dof)
+        # Sort the solution based on reverse index
+        solution = solution[reverse_index]
+        actual_solution = exact_u if notation == 'u' else exact_v if notation == 'v' else exact_p  # get the corresponding exact solution
+        error = np.abs(solution-actual_solution)
+        for i in range(n_dof):
+            new_vtk_file_lines.append(f"{error[i]:.6f}")
+    
     # vector Array for velocity
     new_vtk_file_lines.append(f"VECTORS U double")
-    u_pred = u_pred.reshape(n_dof)
-    v_pred = v_pred.reshape(n_dof)
+    u_pred = u_pred.copy().reshape(n_dof)
+    v_pred = v_pred.copy().reshape(n_dof)
     # Sort the solution based on reverse index
     u_pred = u_pred[reverse_index]
     v_pred = v_pred[reverse_index]
