@@ -853,7 +853,7 @@ if __name__ == "__main__":
     u_test = exact_u[:,None]
     v_test = exact_v[:,None]
     p_test = exact_p[:,None]
-    N_test = 33
+    N_test = np.sqrt(coord_test.shape[0])
 
     ###########################################################################
     model = VPINN(coord_all_train, u_all_train,v_all_train, coord_train_force, f_1_train, f_2_train, quad_coord_train, quad_weight_train,\

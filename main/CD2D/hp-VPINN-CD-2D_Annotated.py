@@ -935,7 +935,7 @@ if __name__ == "__main__":
     # x_test = xy_test[:,0:1]
     # y_test = xy_test[:,1:2]
     # coord_test = np.hstack((x_test[:,None],y_test[:,None]))
-    N_test = 33
+    N_test = np.sqrt(coord_test.shape[0])
     c_test = exact_c[:,None]
 
     ###########################################################################
