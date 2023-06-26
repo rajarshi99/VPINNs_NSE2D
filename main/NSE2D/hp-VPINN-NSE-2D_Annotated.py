@@ -24,7 +24,7 @@ import time
 from rich.console import Console
 from rich.progress import track
 from rich.table import Table
-
+from pathlib import Path
 from read_vtk import *
 
 from mpl_toolkits.mplot3d import axes3d
@@ -162,8 +162,7 @@ class VPINN:
                 
     
                 if var_form == 3:
-                    # \int_{\Omega} \epsilon * \grad{c} \cdot \grad{v} dx dy = \int_{\Omega} \epsilon *  d/dx(c)* d/dx(vx) * vy dx dy
-                    # \sum
+                    
                     U_NN_element_diff_1 = tf.convert_to_tensor([[self.mew*jacobian/jacobian_x*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
@@ -849,7 +848,7 @@ if __name__ == "__main__":
     p_test = exact_p[:,None]
     """
 
-    coord_test, exact_u, exact_v, exact_p = read_vtk('NSE2D.vtk')
+    coord_test, exact_u, exact_v, exact_p = read_vtk('../../FEM.00001.vtk')
     u_test = exact_u[:,None]
     v_test = exact_v[:,None]
     p_test = exact_p[:,None]
@@ -860,10 +859,50 @@ if __name__ == "__main__":
                  F_1_ext_total, F_2_ext_total, grid_x, grid_y, num_total_testfunc, coord_test, u_test,v_test,p_test, Net_layer)
     
     vec_pred_his, loss_his = [], []
-    model.train(200 + 1)
+    model.train(50000 + 1)
     u_pred = model.predict_u()
     v_pred = model.predict_v()
     p_pred = model.predict_p()
+    
+    # Co-ordinates of Ghia's benchmark problem
+    ghia_point_u1 = generate_ghia_point_u1()  # X = 0.5      , Y = 0.0 ~ 1.0
+    ghia_point_u2 = generate_ghia_point_u2()  # X = 0.0 ~ 1.0, Y = 0.5
+    
+    u_pred_ghia = model.net_u(tf.convert_to_tensor(ghia_point_u1[:,0].reshape(-1,1), dtype=tf.float64),tf.convert_to_tensor(ghia_point_u1[:,1].reshape(-1,1), dtype=tf.float64))
+    v_pred_ghia = model.net_v(tf.convert_to_tensor(ghia_point_u2[:,0].reshape(-1,1), dtype=tf.float64),tf.convert_to_tensor(ghia_point_u2[:,1].reshape(-1,1), dtype=tf.float64))
+    
+    u_pred_ghia = u_pred_ghia.eval(session=model.sess)
+    v_pred_ghia = v_pred_ghia.eval(session=model.sess)
+    
+    
+    
+    # Get the FEM Solution for u1 plot
+    temp_index_u1 = np.where(coord_test[:,0] == 0.5)[0]
+    fem_u1_cord = coord_test[temp_index_u1,:]
+    fem_u1_sol = exact_u[temp_index_u1]
+    fem_solution_u1_final = np.vstack((fem_u1_cord[:,1],fem_u1_sol)).T
+    
+    temp_index_u2 = np.where(coord_test[:,1] == 0.5)[0]
+    fem_u2_cord = coord_test[temp_index_u2,:]
+    fem_u2_sol = exact_v[temp_index_u2]
+    fem_solution_u2_final = np.vstack((fem_u2_cord[:,0],fem_u2_sol)).T
+    
+    # TO CHANGE
+    output_path = "output_01"
+    # Add output path to the current directory using Path 
+    output_path = Path.cwd() / output_path
+    
+    # Create the directory if it does not exist
+    Path(output_path).mkdir(parents=True, exist_ok=True)
+    
+    output_path = str(output_path)
+    
+    # call the plot function
+    norm_ghia_u =  plot_ghia_u(f"{output_path}/u1_ghia",u_pred_ghia,fem_solution_u1_final)
+    norm_ghia_v = plot_ghia_v(f"{output_path}/u2_ghia",u_pred_ghia,fem_solution_u2_final)
+    
+    
+    
 
 #%%
     ###########################################################################
@@ -882,7 +921,9 @@ if __name__ == "__main__":
     plt.tick_params( labelsize = 20)
     #fig.tight_layout()
     fig.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_',scheme,'_loss','.pdf']))
+    plt.tight_layout()
+    plt.title(''.join([scheme,'_loss']), fontsize = fontsize)
+    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_',scheme,'_loss','.pdf']))
     
     ###########################################################################
     x_train_plot, y_train_plot = zip(*coord_all_train)
@@ -897,20 +938,21 @@ if __name__ == "__main__":
     if scheme == 'PINNs':
         plt.scatter(x_train_plot, y_train_plot, color='red')
         plt.scatter(x_f_plot,y_f_plot)
-        plt.axhline(-1, linewidth=1, linestyle='--', color='k')
+        plt.axhline(0, linewidth=1, linestyle='--', color='k')
         plt.axhline(1, linewidth=1, linestyle='--', color='k')
-        plt.axvline(-1, linewidth=1, linestyle='--', color='k')
+        plt.axvline(0, linewidth=1, linestyle='--', color='k')
         plt.axvline(1, linewidth=1, linestyle='--', color='k')
-    plt.xlim([-1.1,1.1])
-    plt.ylim([-1.1,1.1])
+    plt.xlim([-0.1,1.1])
+    plt.ylim([-0.1,1.1])
     plt.xlabel('$x$', fontsize = fontsize)
     plt.ylabel('$y$', fontsize = fontsize)
     #ax.set_aspect(1)
     ax.locator_params(nbins=5)
     plt.tick_params( labelsize = 20)
     #fig.tight_layout()
+    ax.set_title(''.join([scheme,'_training_domain']), fontsize = fontsize)
     fig.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_',scheme,'_Domain','.pdf']))
+    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_',scheme,'_Domain','.pdf']))
     
     ###########################################################################
     x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),N_test))
@@ -941,7 +983,8 @@ if __name__ == "__main__":
     ax_pred_u.set_aspect(1)
     #fig.tight_layout()
     fig_pred_u.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_U_',scheme,'_Predict','.png']))
+    ax_pred_u.set_title(''.join([scheme,'_u']), fontsize = fontsize)
+    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_U_',scheme,'_Predict','.png']))
     
     fig_pred_v, ax_pred_v = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_v.contourf(x_test_plot, y_test_plot, v_pred_plot, 100, cmap='jet', origin='lower')
@@ -953,8 +996,9 @@ if __name__ == "__main__":
     plt.tick_params( labelsize = labelsize)
     ax_pred_v.set_aspect(1)
     #fig.tight_layout()
+    ax_pred_v.set_title(''.join([scheme,'_v']), fontsize = fontsize)
     fig_pred_v.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_V_',scheme,'_Predict','.png']))
+    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_V_',scheme,'_Predict','.png']))
 
     fig_pred_p, ax_pred_p = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_p.contourf(x_test_plot, y_test_plot, p_pred_plot, 100, cmap='jet', origin='lower')
@@ -966,8 +1010,9 @@ if __name__ == "__main__":
     plt.tick_params( labelsize = labelsize)
     ax_pred_p.set_aspect(1)
     #fig.tight_layout()
+    ax_pred_p.set_title(''.join([scheme,'_p']), fontsize = fontsize)
     fig_pred_p.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_P_',scheme,'_Predict','.png']))
+    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_P_',scheme,'_Predict','.png']))
     
     fig_pred_u, ax_pred_u = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_u.contourf(x_test_plot, y_test_plot, abs(u_pred_plot - u_test_plot), 100, cmap='jet', origin='lower')
@@ -979,8 +1024,9 @@ if __name__ == "__main__":
     plt.tick_params( labelsize = labelsize)
     ax_pred_u.set_aspect(1)
     #fig.tight_layout()
+    ax_pred_u.set_title(''.join([scheme,'_u',"_error"]), fontsize = fontsize)
     fig_pred_u.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_U_',scheme,'_PntErr','.png']))
+    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_U_',scheme,'_PntErr','.png']))
     
     fig_pred_v, ax_pred_v = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_v.contourf(x_test_plot, y_test_plot, abs(v_pred_plot - v_test_plot), 100, cmap='jet', origin='lower')
@@ -993,7 +1039,8 @@ if __name__ == "__main__":
     ax_pred_v.set_aspect(1)
     #fig.tight_layout()
     fig_pred_v.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_V_',scheme,'_PntErr','.png']))
+    ax_pred_v.set_title(''.join([scheme,'_v',"_error"]), fontsize = fontsize)
+    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_V_',scheme,'_PntErr','.png']))
 
     fig_pred_p, ax_pred_p = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_p.contourf(x_test_plot, y_test_plot, abs(p_pred_plot - p_test_plot), 100, cmap='jet', origin='lower')
@@ -1006,52 +1053,45 @@ if __name__ == "__main__":
     ax_pred_p.set_aspect(1)
     #fig.tight_layout()
     fig_pred_p.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_P_',scheme,'_PntErr','.png']))
+    ax_pred_p.set_title(''.join([scheme,'_p',"_error"]), fontsize = fontsize)
+    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_P_',scheme,'_PntErr','.png']))
 
-    fig_pred_u, ax_pred_u = plt.subplots(constrained_layout=True)
-    CS_pred = ax_pred_u.contourf(x_test_plot, y_test_plot, abs(u_pred_plot - u_test_plot), 100, cmap='jet', origin='lower')
-    cbar = fig_pred_u.colorbar(CS_pred, shrink=0.67)
-    cbar.ax.tick_params(labelsize = labelsize)
-    ax_pred_u.locator_params(nbins=8)
-    ax_pred_u.set_xlabel('$x$' , fontsize = fontsize)
-    ax_pred_u.set_ylabel('$y$' , fontsize = fontsize)
-    plt.tick_params( labelsize = labelsize)
-    ax_pred_u.set_aspect(1)
-    #fig.tight_layout()
-    fig_pred_u.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_U_',scheme,'_Exact','.png']))
+
+    u_mean_error = np.linalg.norm(u_test_plot - u_pred_plot,2)/np.linalg.norm(u_test_plot,2)
+    v_mean_error = np.linalg.norm(v_test_plot - v_pred_plot,2)/np.linalg.norm(v_test_plot,2)
+    p_mean_error = np.linalg.norm(p_test_plot - p_pred_plot,2)/np.linalg.norm(p_test_plot,2)    
+    print(f'Relative L2 Error in u:{u_mean_error}')
+    print(f'Relative L2 Error in v:{v_mean_error}')
+    print(f'Relative L2 Error in p:{p_mean_error}')
     
-    fig_pred_v, ax_pred_v = plt.subplots(constrained_layout=True)
-    CS_pred = ax_pred_v.contourf(x_test_plot, y_test_plot, abs(v_pred_plot - v_test_plot), 100, cmap='jet', origin='lower')
-    cbar = fig_pred_v.colorbar(CS_pred, shrink=0.67)
-    cbar.ax.tick_params(labelsize = labelsize)
-    ax_pred_v.locator_params(nbins=8)
-    ax_pred_v.set_xlabel('$x$' , fontsize = fontsize)
-    ax_pred_v.set_ylabel('$y$' , fontsize = fontsize)
-    plt.tick_params( labelsize = labelsize)
-    ax_pred_v.set_aspect(1)
-    #fig.tight_layout()
-    fig_pred_v.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_V_',scheme,'_Exact','.png']))
-
-    fig_pred_p, ax_pred_p = plt.subplots(constrained_layout=True)
-    CS_pred = ax_pred_p.contourf(x_test_plot, y_test_plot, abs(p_pred_plot - p_test_plot), 100, cmap='jet', origin='lower')
-    cbar = fig_pred_p.colorbar(CS_pred, shrink=0.67)
-    cbar.ax.tick_params(labelsize = labelsize)
-    ax_pred_p.locator_params(nbins=8)
-    ax_pred_p.set_xlabel('$x$' , fontsize = fontsize)
-    ax_pred_p.set_ylabel('$y$' , fontsize = fontsize)
-    plt.tick_params( labelsize = labelsize)
-    ax_pred_p.set_aspect(1)
-    #fig.tight_layout()
-    fig_pred_p.set_size_inches(w=11,h=11)
-    plt.savefig(''.join(['Poisson2D_P_',scheme,'_Exact','.png']))
-
-    u_mean_error = np.linalg.norm(u_test_plot - u_pred_plot)/(N_test**2)
-    v_mean_error = np.linalg.norm(v_test_plot - v_pred_plot)/(N_test**2)
-    p_mean_error = np.linalg.norm(p_test_plot - p_pred_plot)/(N_test**2)
-    print(f'Normalized Error in u:{u_mean_error}')
-    print(f'Normalized Error in v:{v_mean_error}')
-    print(f'Normalized Error in p:{p_mean_error}')
+    ## relative L1 error in the domain
+    u_l1_error = np.linalg.norm(u_test_plot - u_pred_plot, 1)/np.linalg.norm(u_test_plot, 1)
+    v_l1_error = np.linalg.norm(v_test_plot - v_pred_plot, 1)/np.linalg.norm(v_test_plot, 1)
+    p_l1_error = np.linalg.norm(p_test_plot - p_pred_plot, 1)/np.linalg.norm(p_test_plot, 1)
+    print(f'Relative L1 Error in u:{u_l1_error}')
+    print(f'Relative L1 Error in v:{v_l1_error}')
+    print(f'Relative L1 Error in p:{p_l1_error}')
     
-    print(len(u_test_plot), u_test_plot.shape)
+    # relative L-inf error in the domain
+    u_linf_error = np.linalg.norm(u_test_plot - u_pred_plot, np.inf)/np.linalg.norm(u_test_plot, np.inf)
+    v_linf_error = np.linalg.norm(v_test_plot - v_pred_plot, np.inf)/np.linalg.norm(v_test_plot, np.inf)
+    p_linf_error = np.linalg.norm(p_test_plot - p_pred_plot, np.inf)/np.linalg.norm(p_test_plot, np.inf)
+    
+    # create array of errors
+    errors = np.array([
+        ['Variable', 'L2 Error', 'L1 Error', 'L-inf Error'],
+        ['u', u_mean_error, u_l1_error, u_linf_error],
+        ['v', v_mean_error, v_l1_error, v_linf_error],
+        ['p', p_mean_error, p_l1_error, p_linf_error]
+    ])
+
+    # save errors to CSV file
+    np.savetxt(f'{output_path}/errors.csv', errors, delimiter=',', fmt='%s')
+
+    # Save the Ghia et all errors to csv file
+    # save the errors to a CSV file
+    errors = np.array([norm_ghia_u, norm_ghia_v])
+    np.savetxt(f"{output_path}/ghia_errors", errors, delimiter=",")
+    
+
+# %%
