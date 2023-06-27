@@ -187,8 +187,9 @@ class VPINN:
                 d1testy_quad_element, d2testy_quad_element = self.grad_test_func(Ntest_elementy, self.y_quad) # first and second derivatives of the test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
 
                 ## For the reduced basis
-                testx_quad_element_reduced = self.Test_fcnx(self.reduced_pressure, self.x_quad)
-                testy_quad_element_reduced = self.Test_fcny(self.reduced_pressure, self.y_quad)
+                if input_data["model_run_params"]["reduced_pressure"] == True:
+                    testx_quad_element_reduced = self.Test_fcnx(self.reduced_pressure, self.x_quad)
+                    testy_quad_element_reduced = self.Test_fcny(self.reduced_pressure, self.y_quad)
 
                 ## The Mu value is assigned in the trainning loop (For exponential decay purposes)
     
