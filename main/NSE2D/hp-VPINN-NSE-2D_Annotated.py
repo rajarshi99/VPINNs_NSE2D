@@ -131,14 +131,16 @@ class VPINN:
         
         
         self.mu_tensor = tf.placeholder(tf.float64, shape=()) # viscosity. Data type: tf.placeholder, Size: (1)
-        
+        # Obtain the value for reduced pressure for the given code.
+        self.reduced_pressure = self.input_data["model_run_params"]["reduced_shape_func"]
+
         # Obtain the value for reduced pressure for the given code. 
         if self.input_data["model_run_params"]["pressure_correction"] == True:
-            self.reduced_pressure = self.input_data["model_run_params"]["reduced_shape_func"]
-            
             if( self.reduced_pressure > self.num_test_x or self.reduced_pressure > self.num_test_y):
                 print("reduced pressure shape function is greater than the number of test functions in x or y direction")
                 exit(0)
+        
+        
 
         self.sess = tf.Session() # initialize the tensorflow session
         
@@ -186,10 +188,9 @@ class VPINN:
                 testy_quad_element = self.Test_fcny(Ntest_elementy, self.y_quad)                              # test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
                 d1testy_quad_element, d2testy_quad_element = self.grad_test_func(Ntest_elementy, self.y_quad) # first and second derivatives of the test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
 
-                ## For the reduced basis
-                if input_data["model_run_params"]["reduced_pressure"] == True:
-                    testx_quad_element_reduced = self.Test_fcnx(self.reduced_pressure, self.x_quad)
-                    testy_quad_element_reduced = self.Test_fcny(self.reduced_pressure, self.y_quad)
+                ## used For the pressure  reduced basis calculation only
+                testx_quad_element_reduced = self.Test_fcnx(self.reduced_pressure, self.x_quad)
+                testy_quad_element_reduced = self.Test_fcny(self.reduced_pressure, self.y_quad)
 
                 ## The Mu value is assigned in the trainning loop (For exponential decay purposes)
     
