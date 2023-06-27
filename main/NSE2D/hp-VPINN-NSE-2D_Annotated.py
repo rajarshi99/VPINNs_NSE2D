@@ -479,6 +479,9 @@ class VPINN:
 ###############################################################################
     def train(self, nIter):
         
+        # Save the mu array and learning rate array
+        self.mu_array = np.zeros(nIter)
+
         # mu_value = self.sess.run(self.mu)
         self.muval = np.float64(input_data["bilinear_coefficients"]["mu"])
         
@@ -527,15 +530,23 @@ class VPINN:
                     num_decrement_steps = threshold_iter/self.input_data["mu_scheduler"]["mu_step_size"]
                     if(it == 0):
                         self.mu = self.mu_start
+                        self.mu_array[it] = self.mu
                         continue  ## Skip the rest of the loop
                     
+
                     if(it % self.input_data["mu_scheduler"]["mu_step_size"] == 0 and it < threshold_iter ):
                         self.mu = self.mu - (1.0/num_decrement_steps) * (self.mu_start - self.mu_end)
-                     
+                    
+                    # if it has increased beyond the threshold, set it to the end value
+                    if (it > threshold_iter):
+                        self.mu = self.mu_end
             
             else:
                 self.mu = self.input_data["bilinear_coefficients"]["mu"]
             
+            # append the mu value to the array
+            self.mu_array[it] = self.mu
+
             # Assign the computed mu value to the mu tensor
             self.muval = np.float64(self.mu)
             
@@ -570,6 +581,9 @@ class VPINN:
             # call plot_u_epoch function
             if it % 5000 == 0 and it != 0:
                 self.plot_u_epoch(it)
+                nn_output = self.net_u_numpy(self.x_test,self.y_test)
+                # Save the output of the neural network to an npz file
+                np.savez(f"{self.output_folder}/output_at_epoch_{it}.npz", nn_output)
 
     def predict_u(self):
         u_pred = self.sess.run(self.u_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
@@ -1128,7 +1142,22 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.title(''.join([scheme,'_loss']), fontsize = fontsize)
     plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_',scheme,'_loss','.pdf']))
-    
+    plt.close()
+
+    # Add the mu scheduler plot
+    fig = plt.figure(1)
+    plt.tick_params(axis='y', which='both', labelleft='on', labelright='off')
+    plt.xlabel('$iteration$', fontsize = fontsize)
+    plt.ylabel('$loss \,\, values$', fontsize = fontsize)
+    plt.grid(True)
+    plt.plot(model.mu_array)
+    plt.tick_params( labelsize = 20)
+    #fig.tight_layout()
+    fig.set_size_inches(w=11,h=11)
+    plt.tight_layout()
+    plt.title(''.join([scheme,'_mu']), fontsize = fontsize)
+    plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_',scheme,'_mu','.pdf']))
+    plt.close()
     ###########################################################################
     x_train_plot, y_train_plot = zip(*coord_all_train)
     x_f_plot, y_f_plot = zip(*coord_train_force)
