@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Debug hp-VPINN-NSE-2D_Annotated.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main/NSE2D/hp-VPINN-NSE-2D_Annotated.py",
+            "args": [
+                "input_nse.yaml"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopOnEntry": false,
+            "debugOptions": [
+                "RedirectOutput"
+            ]
+        }
+    ]
+}

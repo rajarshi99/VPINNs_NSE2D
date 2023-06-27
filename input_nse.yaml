@@ -1,35 +1,41 @@
 bilinear_coefficients:
-  re_nr: 100
+  mu: 0.01
 
 experimental_params:
   output_folder: Output/NSE2D/Without_PC_100
   vtk_base_name: VPINNS_NSE2D
 
 model_run_params:
-  max_iter: 40000                              # Max iterations
+  max_iter: 5000                              # Max iterations
   NN_model:                                     # NN architecture
   - 2
-  - 40
-  - 40
-  - 40
+  - 30
+  - 30
+  - 30
   - 3
   boundary_loss_tau: 10.0                       # Boundary Loss Parameter (Tau) as mentioned in Paper
   num_quad_points: 70                          # Number of Quadrature Points for Loss Calculation
-  num_bound_points: 80                         # Number of Boundary Points for Loss Calculation
+  num_bound_points: 150                         # Number of Boundary Points for Loss Calculation
   num_residual_points: 100                      # Number of Residual Points for Loss Calculation
   num_elements_x: 1                                     # Number of Cells in x-direction
   num_elements_y: 1                                     # Number of Cells in y-direction
-  num_shape_functions_x: 10                     # Number of Shape Functions in x-direction
-  num_shape_functions_y: 10                     # Number of Shape Functions in y-direction
+  num_shape_functions_x: 4                      # Number of Shape Functions in x-direction
+  num_shape_functions_y: 4                      # Number of Shape Functions in y-direction
   learning_rate: 0.001                          # Learning Rate
-  exact_solution_vtk: data/FEM.00001.vtk             # Exact Solution VTK File
-  pressure_correction: False
+  exact_solution_vtk: data/FEM.00001.vtk        # Exact Solution VTK File
+  pressure_correction: False                    # Pressure Correction or not
 
 lr_scheduler:
-  use_lr_scheduler: true                            # Use LR Scheduler or not
+  use_lr_scheduler: True                            # Use LR Scheduler or not
   decay_rate: 0.5                               # Decay Rate
-  decay_steps: 10000                            # Decay Steps
+  decay_steps: 5000                            # Decay Steps
   initial_lr: 0.001                              # Initial Learning Rate
+
+mu_scheduler:
+  use_mu_scheduler: True                       # Use RE Scheduler or not
+  mu_start: 1                                   # mu Start
+  mu_end: 0.01                                   # mu End (Final)
+  mu_threshold_iter_percentage: 0.8             # After this iteration number, the RE will be hardcoded to re_end
 
 model_save_params:
   save_model: true                              # Save model or not

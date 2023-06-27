@@ -131,11 +131,10 @@ class VPINN:
         
         
         
-
+        self.mu = input_data["bilinear_coefficients"]["mu"] # viscosity. Data type: float, Size: (1)
 
         self.sess = tf.Session() # initialize the tensorflow session
         
-        self.mew = 1.0
 
         #check
         self.u_pred_boundary = self.net_u(self.x_bound_tensor, self.y_bound_tensor)                 # predicted values at the boundary points. Data type: tf.tensor, Size: (N_bound,1)
@@ -181,20 +180,19 @@ class VPINN:
                 d1testy_quad_element, d2testy_quad_element = self.grad_test_func(Ntest_elementy, self.y_quad) # first and second derivatives of the test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
 
 
-                ## Collect the Reynolds number from the input_data(yaml) file
-                self.Re = self.input_data["bilinear_coefficients"]["re_nr"]
+                ## The Mu value is assigned in the trainning loop (For exponential decay purposes)
     
                 if var_form == 3:
                     
                     
-                    U_NN_element_diff_1 = tf.convert_to_tensor([[(1.0/self.Re)*jacobian/jacobian_x*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
+                    U_NN_element_diff_1 = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
+                                    (self.mu)*self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
                     
 
-                    U_NN_element_diff_2 = tf.convert_to_tensor([[(1.0/self.Re)*jacobian/jacobian_y*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
+                    U_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                                    (self.mu)*self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
                     U_NN_element_adv = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
@@ -205,15 +203,14 @@ class VPINN:
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
                     
-                    V_NN_element_diff_1 = tf.convert_to_tensor([[(1.0/self.Re)*jacobian/jacobian_x*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xv_NN_quad_element) \
+                    V_NN_element_diff_1 = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
+                                    (self.mu)*self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xv_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                    V_NN_element_diff_2 = tf.convert_to_tensor([[(1.0/self.Re)*jacobian/jacobian_y*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yv_NN_quad_element) \
+                    V_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
+                                    (self.mu)*self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yv_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
 
-                  
-                    
+                   
                     
                     P_NN_element_1 = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*p_NN_quad_element) \
@@ -230,7 +227,6 @@ class VPINN:
                     P_NN_element_3 = tf.convert_to_tensor(tf.reduce_sum(\
                                     self.w_quad[:,0:1]*self.w_quad[:,1:2]*p_NN_quad_element) \
                                     , dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                    
                     
 
                     U_NN_element_diff = U_NN_element_diff_1 + U_NN_element_diff_2 # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
@@ -283,6 +279,7 @@ class VPINN:
             
             self.optimizer_Adam = tf.train.AdamOptimizer(self.learning_rate)
             
+            print("[INFO] Using Learning Rate Scheduler")
             
             
         self.train_op_Adam = self.optimizer_Adam.minimize(self.loss)
@@ -467,12 +464,14 @@ class VPINN:
 ###############################################################################
     def train(self, nIter):
         
+        # mu_value = self.sess.run(self.mu)
+        
         tf_dict = {self.x_bound_tensor: self.x_bound  , self.y_bound_tensor: self.y_bound,
                    self.u_bound_tensor: self.u_bound, self.v_bound_tensor: self.v_bound,
                    self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test, # 
                    self.x_force_tensor: self.x_f, self.y_force_tensor: self.y_f,
                    self.force_1_tensor: self.f1train, self.force_2_tensor: self.f2train}
-
+        self.mu = input_data["bilinear_coefficients"]["mu"]  # initialise Mu
         start_time   = time.time()
         for it in track(range(nIter), description='Training: '): # 
 
@@ -484,15 +483,50 @@ class VPINN:
 #                loss_value = self.sess.run(self.loss, tf_dict)
 #                u_pred     = self.sess.run(self.c_test, tf_dict)
 #                u_pred_his.append(u_pred)
+
+            # Use a Reynolds number scheduler
+            if(self.input_data["mu_scheduler"]["use_mu_scheduler"] == True):
+                self.mu_start = self.input_data["mu_scheduler"]["mu_start"]
+                self.mu_end   = self.input_data["mu_scheduler"]["mu_end"]
+                self.mu_threshold = self.input_data["mu_scheduler"]["mu_threshold_iter_percentage"]
+                
+                # the thresold value of iteration
+                threshold_iter  = int(self.input_data["mu_scheduler"]["mu_threshold_iter_percentage"] * nIter)
+
+                # Apply exponential increment of reynolds number when the iteration is less than threshold
+                if(it < threshold_iter):
+                    growth_factor  = (1.0/threshold_iter) * np.log(self.mu_start/self.mu_end)
+                    mu_value = self.mu_start * np.exp(-1.0*growth_factor * it)
+
+                    # set the re_nr to be the model Object's re_nr
+                    self.mu = mu_value
+                
+                else:
+                    self.mu = self.mu_end
+                    
+            
+            else:
+                self.mu = self.input_data["bilinear_coefficients"]["mu"]
+                
+                
+            
+            
+            # Print the values of the loss function    
             if it % 100 == 0:
                 elapsed = time.time() - start_time 
                 self.total_train_time += elapsed
-                str_print = ''.join(['It: %d, Loss: %.3e, Time: %.2f'])
-                print(str_print % (it, loss_value, elapsed))
+                str_print = ''.join(['It: %d, Loss: %.3e, Time: %.2f', ' Mu: %.3e', ' Learning Rate: %.3e'])
+                print(str_print % (it, loss_value, elapsed, self.mu, self.learning_rate.eval(session=self.sess)))
                 start_time = time.time()
+            
+            
             
             if it % self.input_data["model_save_params"]["save_frequency"] == 0 and it != 0:
                 self.save_model(self.model_save_path,it)
+            
+            # call plot_u_epoch function
+            if it % 5000 == 0 and it != 0:
+                self.plot_u_epoch(it)
 
     def predict_u(self):
         u_pred = self.sess.run(self.u_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
@@ -503,6 +537,42 @@ class VPINN:
     def predict_p(self):
         p_pred = self.sess.run(self.p_test, {self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test})
         return p_pred
+
+    def plot_u_epoch(self, epoch):
+        x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),N_test))
+        y_test_plot = np.asarray(np.split(coord_test[:,1:2].flatten(),N_test))
+        u_pred = self.predict_u()
+        v_pred = self.predict_v()
+        p_pred = self.predict_p()
+
+        
+        u_pred_plot = np.asarray(np.split(u_pred.flatten(),N_test))
+        v_pred_plot = np.asarray(np.split(v_pred.flatten(),N_test))
+        p_pred_plot = np.asarray(np.split(p_pred.flatten(),N_test))
+        
+
+        fontsize = 32
+        labelsize = 26
+        
+        pred_array = [u_pred_plot, v_pred_plot, p_pred_plot]
+        pred_string = ['u', 'v', 'p']
+        
+        for pred, string in zip(pred_array, pred_string):
+            fig_pred, ax_pred = plt.subplots(constrained_layout=True)
+            CS_pred = ax_pred.contourf(x_test_plot, y_test_plot, pred, 100, cmap='jet', origin='lower')
+            cbar = fig_pred.colorbar(CS_pred, shrink=0.67)
+            cbar.ax.tick_params(labelsize = labelsize)
+            ax_pred.locator_params(nbins=8)
+            ax_pred.set_xlabel('$x$' , fontsize = fontsize)
+            ax_pred.set_ylabel('$y$' , fontsize = fontsize)
+            plt.tick_params( labelsize = labelsize)
+            ax_pred.set_aspect(1)
+            #fig.tight_layout()
+            fig_pred.set_size_inches(w=11,h=11)
+            plt.savefig(''.join([self.output_folder,'/NSE2D_',scheme,'_Predict_', string,'_',str(epoch),'.png']))
+            plt.close()
+        
+        
 #%%
 ###############################################################################
 # =============================================================================
@@ -928,6 +998,7 @@ if __name__ == "__main__":
     exact_p = P_test.flatten()[2::3] # Datatype: numpy.ndarray, Size: (N_test*N_test,), exact solution at test points
     p_test = exact_p[:,None]
     """
+    
     exact_solution_vtk = input_data["model_run_params"]["exact_solution_vtk"]
 
     coord_test, exact_u, exact_v, exact_p,index = read_vtk(exact_solution_vtk)
@@ -973,24 +1044,24 @@ if __name__ == "__main__":
     fem_solution_u2_final = np.vstack((fem_u2_cord[:,0],fem_u2_sol)).T
     
     # TO CHANGE
-    output_path =input_data["experimental_params"]["output_folder"]
+    output_folder =input_data["experimental_params"]["output_folder"]
 
     # Add output path to the current directory using Path 
-    output_path = Path.cwd() / output_path
+    output_folder = Path.cwd() / output_folder
     
     # Create the directory if it does not exist
-    Path(output_path).mkdir(parents=True, exist_ok=True)
+    Path(output_folder).mkdir(parents=True, exist_ok=True)
     
-    output_path = str(output_path)
+    output_folder = str(output_folder)
     
     # call the plot function
-    norm_ghia_u =  plot_ghia_u(f"{output_path}/u1_ghia",u_pred_ghia,fem_solution_u1_final)
-    norm_ghia_v = plot_ghia_v(f"{output_path}/u2_ghia",u_pred_ghia,fem_solution_u2_final)
+    norm_ghia_u =  plot_ghia_u(f"{output_folder}/u1_ghia",u_pred_ghia,fem_solution_u1_final)
+    norm_ghia_v = plot_ghia_v(f"{output_folder}/u2_ghia",v_pred_ghia,fem_solution_u2_final)
     
     # Write the final solution as vtk file
     vtk_base_name = input_data["experimental_params"]["vtk_base_name"]
 
-    write_vtk(u_pred,v_pred,p_pred,coord_test,f"{output_path}/{vtk_base_name}.vtk",exact_solution_vtk,index,exact_u, exact_v, exact_p)
+    # write_vtk(u_pred,v_pred,p_pred,coord_test,f"{output_folder}/{vtk_base_name}.vtk",exact_solution_vtk,index,exact_u, exact_v, exact_p)
     
  
 
@@ -1013,7 +1084,7 @@ if __name__ == "__main__":
     fig.set_size_inches(w=11,h=11)
     plt.tight_layout()
     plt.title(''.join([scheme,'_loss']), fontsize = fontsize)
-    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_',scheme,'_loss','.pdf']))
+    plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_',scheme,'_loss','.pdf']))
     
     ###########################################################################
     x_train_plot, y_train_plot = zip(*coord_all_train)
@@ -1042,7 +1113,7 @@ if __name__ == "__main__":
     #fig.tight_layout()
     ax.set_title(''.join([scheme,'_training_domain']), fontsize = fontsize)
     fig.set_size_inches(w=11,h=11)
-    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_',scheme,'_Domain','.pdf']))
+    plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_',scheme,'_Domain','.pdf']))
     
     ###########################################################################
     x_test_plot = np.asarray(np.split(coord_test[:,0:1].flatten(),N_test))
@@ -1074,7 +1145,7 @@ if __name__ == "__main__":
     #fig.tight_layout()
     fig_pred_u.set_size_inches(w=11,h=11)
     ax_pred_u.set_title(''.join([scheme,'_u']), fontsize = fontsize)
-    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_U_',scheme,'_Predict','.png']))
+    plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_U_',scheme,'_Predict','.png']))
     
     fig_pred_v, ax_pred_v = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_v.contourf(x_test_plot, y_test_plot, v_pred_plot, 100, cmap='jet', origin='lower')
@@ -1088,7 +1159,7 @@ if __name__ == "__main__":
     #fig.tight_layout()
     ax_pred_v.set_title(''.join([scheme,'_v']), fontsize = fontsize)
     fig_pred_v.set_size_inches(w=11,h=11)
-    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_V_',scheme,'_Predict','.png']))
+    plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_V_',scheme,'_Predict','.png']))
 
     fig_pred_p, ax_pred_p = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_p.contourf(x_test_plot, y_test_plot, p_pred_plot, 100, cmap='jet', origin='lower')
@@ -1102,7 +1173,7 @@ if __name__ == "__main__":
     #fig.tight_layout()
     ax_pred_p.set_title(''.join([scheme,'_p']), fontsize = fontsize)
     fig_pred_p.set_size_inches(w=11,h=11)
-    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_P_',scheme,'_Predict','.png']))
+    plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_P_',scheme,'_Predict','.png']))
     
     fig_pred_u, ax_pred_u = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_u.contourf(x_test_plot, y_test_plot, abs(u_pred_plot - u_test_plot), 100, cmap='jet', origin='lower')
@@ -1116,7 +1187,7 @@ if __name__ == "__main__":
     #fig.tight_layout()
     ax_pred_u.set_title(''.join([scheme,'_u',"_error"]), fontsize = fontsize)
     fig_pred_u.set_size_inches(w=11,h=11)
-    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_U_',scheme,'_PntErr','.png']))
+    plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_U_',scheme,'_PntErr','.png']))
     
     fig_pred_v, ax_pred_v = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_v.contourf(x_test_plot, y_test_plot, abs(v_pred_plot - v_test_plot), 100, cmap='jet', origin='lower')
@@ -1130,7 +1201,7 @@ if __name__ == "__main__":
     #fig.tight_layout()
     fig_pred_v.set_size_inches(w=11,h=11)
     ax_pred_v.set_title(''.join([scheme,'_v',"_error"]), fontsize = fontsize)
-    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_V_',scheme,'_PntErr','.png']))
+    plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_V_',scheme,'_PntErr','.png']))
 
     fig_pred_p, ax_pred_p = plt.subplots(constrained_layout=True)
     CS_pred = ax_pred_p.contourf(x_test_plot, y_test_plot, abs(p_pred_plot - p_test_plot), 100, cmap='jet', origin='lower')
@@ -1144,7 +1215,7 @@ if __name__ == "__main__":
     #fig.tight_layout()
     fig_pred_p.set_size_inches(w=11,h=11)
     ax_pred_p.set_title(''.join([scheme,'_p',"_error"]), fontsize = fontsize)
-    plt.savefig(''.join([output_path,"/",'NSE2D_Lid_P_',scheme,'_PntErr','.png']))
+    plt.savefig(''.join([output_folder,"/",'NSE2D_Lid_P_',scheme,'_PntErr','.png']))
 
 
     u_mean_error = np.linalg.norm(u_test_plot - u_pred_plot,2)/np.linalg.norm(u_test_plot,2)
@@ -1176,15 +1247,15 @@ if __name__ == "__main__":
     ])
 
     # save errors to CSV file
-    np.savetxt(f'{output_path}/pointwise_errors.csv', errors, delimiter=',', fmt='%s')
+    np.savetxt(f'{output_folder}/pointwise_errors.csv', errors, delimiter=',', fmt='%s')
 
     # Save the Ghia et all errors to csv file
     # save the errors to a CSV file
     ghia_errors = np.array([norm_ghia_u, norm_ghia_v])
-    np.savetxt(f"{output_path}/ghia_errors.csv", ghia_errors, delimiter=",")
+    np.savetxt(f"{output_folder}/ghia_errors.csv", ghia_errors, delimiter=",")
     
     # Save the pinns predicted solution to the csv file
-    np.savez(f"{output_path}/solution_data.npz", x_test_plot=x_test_plot, y_test_plot=y_test_plot, u_test_plot=u_test_plot, u_pred_plot=u_pred_plot, v_test_plot=v_test_plot, v_pred_plot=v_pred_plot, p_test_plot=p_test_plot, p_pred_plot=p_pred_plot)
+    np.savez(f"{output_folder}/solution_data.npz", x_test_plot=x_test_plot, y_test_plot=y_test_plot, u_test_plot=u_test_plot, u_pred_plot=u_pred_plot, v_test_plot=v_test_plot, v_pred_plot=v_pred_plot, p_test_plot=p_test_plot, p_pred_plot=p_pred_plot)
     
     
     # if use mlflow
@@ -1204,18 +1275,18 @@ if __name__ == "__main__":
         mlflow.set_tag("mlflow.runName", mlflow_run_prefix + "_" + str(now))
         
         # create a plot directory
-        os.system(f"mkdir -p {output_path}/plots")
-        os.system(f"mv {output_path}/*png {output_path}/*pdf {output_path}/*eps  {output_path}/plots")
+        os.system(f"mkdir -p {output_folder}/plots")
+        os.system(f"mv {output_folder}/*png {output_folder}/*pdf {output_folder}/*eps  {output_folder}/plots")
         
         # Save the final numpy arrays
-        os.system(f"mkdir -p {output_path}/solution_arrays")
+        os.system(f"mkdir -p {output_folder}/solution_arrays")
         
         # move the solution arrays to the solution_arrays directory
-        os.system(f"mv {output_path}/*.npz {output_path}/solution_arrays")
-        os.system(f"mv {output_path}/*.csv {output_path}/solution_arrays")
+        os.system(f"mv {output_folder}/*.npz {output_folder}/solution_arrays")
+        os.system(f"mv {output_folder}/*.csv {output_folder}/solution_arrays")
         
         # move the yaml file 
-        os.system(f"cp {sys.argv[1]} {output_path}/{sys.argv[1]}")
+        os.system(f"cp {sys.argv[1]} {output_folder}/{sys.argv[1]}")
         
         # Log the other metrics
         mlflow.log_metric("loss", loss_his[-1])
@@ -1227,9 +1298,9 @@ if __name__ == "__main__":
         mlflow.log_metric("ghia_v_l2_error", norm_ghia_v[3])
         
         # VTK Files 
-        os.system(f"mkdir -p {output_path}/vtk_files")
-        os.system(f"mv {output_path}/*.vtk {output_path}/vtk_files")
-        os.system(f"cp {exact_solution_vtk} {output_path}/vtk_files")
+        os.system(f"mkdir -p {output_folder}/vtk_files")
+        os.system(f"mv {output_folder}/*.vtk {output_folder}/vtk_files")
+        os.system(f"cp {exact_solution_vtk} {output_folder}/vtk_files")
         
         # Log the time
         mlflow.log_param("date", now)
@@ -1257,11 +1328,11 @@ if __name__ == "__main__":
 
             
         
-        mlflow.log_artifact(f"{output_path}/plots",artifact_path="plots")
-        mlflow.log_artifact(f"{output_path}/vtk_files",artifact_path="vtk_files")
-        mlflow.log_artifact(f"{output_path}/{sys.argv[1]}")
-        mlflow.log_artifact(f"{output_path}/models",artifact_path="models")
-        mlflow.log_artifact(f"{output_path}/solution_arrays",artifact_path="solution_arrays")
+        mlflow.log_artifact(f"{output_folder}/plots",artifact_path="plots")
+        mlflow.log_artifact(f"{output_folder}/vtk_files",artifact_path="vtk_files")
+        mlflow.log_artifact(f"{output_folder}/{sys.argv[1]}")
+        mlflow.log_artifact(f"{output_folder}/models",artifact_path="models")
+        mlflow.log_artifact(f"{output_folder}/solution_arrays",artifact_path="solution_arrays")
         
         
         

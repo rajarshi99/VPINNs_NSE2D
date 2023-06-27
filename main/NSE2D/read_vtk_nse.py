@@ -138,6 +138,7 @@ def plot_ghia_v(filename,solution_pinns, solution_fem):
     plt.xlabel('x')
     plt.ylabel('v')
     plt.savefig(f"{filename}.png",dpi=300)
+    plt.clf()
     
     ## print errors
     print(f"l2_norm_pinns_fem_u = {l2_norm_pinns_fem}")
