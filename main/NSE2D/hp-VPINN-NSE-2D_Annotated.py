@@ -97,6 +97,7 @@ class VPINN:
         self.input_data = input_data
         # add output folder
         self.output_folder = self.input_data["experimental_params"]["output_folder"]
+
         
         # Generate one more folder for saving the model
         if not os.path.exists(self.output_folder + '/models'):
@@ -107,7 +108,6 @@ class VPINN:
         
         # intialse total train time to zero
         self.total_train_time = 0
-
         
         self.layers = layers                                # neural network structure. Data type: list, Size: (num_layers+1,1)
         self.weights, self.biases, self.a = self.initialize_NN(layers) # initialize the weights and biases of the neural network
@@ -130,12 +130,19 @@ class VPINN:
         self.y_quad_tensor = tf.placeholder(tf.float64, shape=[None, self.y_quad.shape[1]]) # quadrature points in y direction. Data type: tf.placeholder, Size: (N_quad,1)
         
         
+        self.mu_tensor = tf.placeholder(tf.float64, shape=()) # viscosity. Data type: tf.placeholder, Size: (1)
         
-        self.mu = input_data["bilinear_coefficients"]["mu"] # viscosity. Data type: float, Size: (1)
+        # Obtain the value for reduced pressure for the given code. 
+        if self.input_data["model_run_params"]["pressure_correction"] == True:
+            self.reduced_pressure = self.input_data["model_run_params"]["reduced_shape_func"]
+            
+            if( self.reduced_pressure > self.num_test_x or self.reduced_pressure > self.num_test_y):
+                print("reduced pressure shape function is greater than the number of test functions in x or y direction")
+                exit(0)
 
         self.sess = tf.Session() # initialize the tensorflow session
         
-
+        
         #check
         self.u_pred_boundary = self.net_u(self.x_bound_tensor, self.y_bound_tensor)                 # predicted values at the boundary points. Data type: tf.tensor, Size: (N_bound,1)
         self.v_pred_boundary = self.net_v(self.x_bound_tensor, self.y_bound_tensor)                 # predicted values at the boundary points. Data type: tf.tensor, Size: (N_bound,1)
@@ -186,13 +193,12 @@ class VPINN:
                     
                     
                     U_NN_element_diff_1 = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
-                                    (self.mu)*self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
+                                    (self.mu_tensor)*self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                    
                     
 
                     U_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
-                                    (self.mu)*self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
+                                    (self.mu_tensor)*self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yu_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
                     U_NN_element_adv = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
@@ -204,10 +210,10 @@ class VPINN:
                     
                     
                     V_NN_element_diff_1 = tf.convert_to_tensor([[jacobian/jacobian_x*tf.reduce_sum(\
-                                    (self.mu)*self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xv_NN_quad_element) \
+                                    (self.mu_tensor)*self.w_quad[:,0:1]*d1testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*d1xv_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     V_NN_element_diff_2 = tf.convert_to_tensor([[jacobian/jacobian_y*tf.reduce_sum(\
-                                    (self.mu)*self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yv_NN_quad_element) \
+                                    (self.mu_tensor)*self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*d1yv_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
 
                    
@@ -220,11 +226,17 @@ class VPINN:
                                     self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*d1testy_quad_element[k]*p_NN_quad_element) \
                                     for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
-                    Continuity_NN_element = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                    self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*(d1xu_NN_quad_element+d1yv_NN_quad_element)) \
-                                    for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    ## Reduced Space for Pressure Correction
+                    if(self.input_data["model_run_params"]["pressure_correction"] == False):
+                        Continuity_NN_element = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
+                                        self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*(d1xu_NN_quad_element+d1yv_NN_quad_element)) \
+                                        for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
+                    else:
+                        Continuity_NN_element = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
+                                        self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*(d1xu_NN_quad_element+d1yv_NN_quad_element)) \
+                                        for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
                     
-                    P_NN_element_3 = tf.convert_to_tensor(tf.reduce_sum(\
+                    P_NN_element_3 = tf.convert_to_tensor(jacobian*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*self.w_quad[:,1:2]*p_NN_quad_element) \
                                     , dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
                     
@@ -465,20 +477,20 @@ class VPINN:
     def train(self, nIter):
         
         # mu_value = self.sess.run(self.mu)
+        self.muval = np.float64(input_data["bilinear_coefficients"]["mu"])
         
         tf_dict = {self.x_bound_tensor: self.x_bound  , self.y_bound_tensor: self.y_bound,
                    self.u_bound_tensor: self.u_bound, self.v_bound_tensor: self.v_bound,
                    self.x_test_tensor: self.x_test, self.y_test_tensor: self.y_test, # 
                    self.x_force_tensor: self.x_f, self.y_force_tensor: self.y_f,
-                   self.force_1_tensor: self.f1train, self.force_2_tensor: self.f2train}
-        self.mu = input_data["bilinear_coefficients"]["mu"]  # initialise Mu
+                   self.force_1_tensor: self.f1train, self.force_2_tensor: self.f2train, 
+                   self.mu_tensor: self.muval}
+
+        
         start_time   = time.time()
         for it in track(range(nIter), description='Training: '): # 
+            
 
-            self.sess.run(self.train_op_Adam, tf_dict) 
-
-            loss_value = self.sess.run(self.loss, tf_dict)
-            loss_his.append(loss_value)
 #            if it % 1 == 0:
 #                loss_value = self.sess.run(self.loss, tf_dict)
 #                u_pred     = self.sess.run(self.c_test, tf_dict)
@@ -489,26 +501,48 @@ class VPINN:
                 self.mu_start = self.input_data["mu_scheduler"]["mu_start"]
                 self.mu_end   = self.input_data["mu_scheduler"]["mu_end"]
                 self.mu_threshold = self.input_data["mu_scheduler"]["mu_threshold_iter_percentage"]
-                
-                # the thresold value of iteration
+                self.mu_type  = self.input_data["mu_scheduler"]["mu_scheduler_type"]
+                 # the thresold value of iteration
                 threshold_iter  = int(self.input_data["mu_scheduler"]["mu_threshold_iter_percentage"] * nIter)
-
-                # Apply exponential increment of reynolds number when the iteration is less than threshold
-                if(it < threshold_iter):
-                    growth_factor  = (1.0/threshold_iter) * np.log(self.mu_start/self.mu_end)
-                    mu_value = self.mu_start * np.exp(-1.0*growth_factor * it)
-
-                    # set the re_nr to be the model Object's re_nr
-                    self.mu = mu_value
                 
-                else:
-                    self.mu = self.mu_end
+                # Exponential Decay of the Reynolds number
+                if self.mu_type == "exponential":
+                   
+
+                    # Apply exponential increment of reynolds number when the iteration is less than threshold
+                    if(it < threshold_iter):
+                        growth_factor  = (1.0/threshold_iter) * np.log(self.mu_start/self.mu_end)
+                        mu_value = self.mu_start * np.exp(-1.0*growth_factor * it)
+
+                        # set the re_nr to be the model Object's re_nr
+                        self.mu = mu_value
+                    else:
+                        self.mu = self.mu_end
+                
+                # Step function odecay of the Reynolds number
+                elif self.mu_type == "step":
+                    num_decrement_steps = threshold_iter/self.input_data["mu_scheduler"]["mu_step_size"]
+                    if(it == 0):
+                        self.mu = self.mu_start
+                        continue  ## Skip the rest of the loop
                     
+                    if(it % self.input_data["mu_scheduler"]["mu_step_size"] == 0 and it < threshold_iter ):
+                        self.mu = self.mu - (1.0/num_decrement_steps) * (self.mu_start - self.mu_end)
+                     
             
             else:
                 self.mu = self.input_data["bilinear_coefficients"]["mu"]
-                
-                
+            
+            # Assign the computed mu value to the mu tensor
+            self.muval = np.float64(self.mu)
+            
+            tf_dict[self.mu_tensor] = self.muval
+            
+            # Use a learning rate scheduler
+            self.sess.run(self.train_op_Adam, tf_dict) 
+
+            loss_value = self.sess.run(self.loss, tf_dict)
+            loss_his.append(loss_value)
             
             
             # Print the values of the loss function    
@@ -516,7 +550,13 @@ class VPINN:
                 elapsed = time.time() - start_time 
                 self.total_train_time += elapsed
                 str_print = ''.join(['It: %d, Loss: %.3e, Time: %.2f', ' Mu: %.3e', ' Learning Rate: %.3e'])
-                print(str_print % (it, loss_value, elapsed, self.mu, self.learning_rate.eval(session=self.sess)))
+                
+                # print the output of the loss function
+                if self.input_data["lr_scheduler"]["use_lr_scheduler"] == True:
+                    print(str_print % (it, loss_value, elapsed, self.mu, self.learning_rate.eval(session=self.sess)))
+                else:
+                    print(str_print % (it, loss_value, elapsed, self.mu, self.learning_rate))
+                
                 start_time = time.time()
             
             
