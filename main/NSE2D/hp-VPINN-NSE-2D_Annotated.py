@@ -186,6 +186,9 @@ class VPINN:
                 testy_quad_element = self.Test_fcny(Ntest_elementy, self.y_quad)                              # test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
                 d1testy_quad_element, d2testy_quad_element = self.grad_test_func(Ntest_elementy, self.y_quad) # first and second derivatives of the test functions in y direction. Data type: numpy.ndarray, Size: (Ntest_elementy,N_quad)
 
+                ## For the reduced basis
+                testx_quad_element_reduced = self.Test_fcnx(self.reduced_pressure, self.x_quad)
+                testy_quad_element_reduced = self.Test_fcny(self.reduced_pressure, self.y_quad)
 
                 ## The Mu value is assigned in the trainning loop (For exponential decay purposes)
     
@@ -231,10 +234,10 @@ class VPINN:
                         Continuity_NN_element = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
                                         self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*(d1xu_NN_quad_element+d1yv_NN_quad_element)) \
                                         for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64) # Data type: tf.tensor, Size: (Ntest_elementx,Ntest_elementy)
-                    else:
+                    else:  # perform computation on reduced space
                         Continuity_NN_element = tf.convert_to_tensor([[jacobian*tf.reduce_sum(\
-                                        self.w_quad[:,0:1]*testx_quad_element[r]*self.w_quad[:,1:2]*testy_quad_element[k]*(d1xu_NN_quad_element+d1yv_NN_quad_element)) \
-                                        for r in range(Ntest_elementx)] for k in range(Ntest_elementy)], dtype= tf.float64)
+                                        self.w_quad[:,0:1]*testx_quad_element_reduced[r]*self.w_quad[:,1:2]*testy_quad_element_reduced[k]*(d1xu_NN_quad_element+d1yv_NN_quad_element)) \
+                                        for r in range(self.reduced_pressure)] for k in range(self.reduced_pressure)], dtype= tf.float64)
                     
                     P_NN_element_3 = tf.convert_to_tensor(jacobian*tf.reduce_sum(\
                                     self.w_quad[:,0:1]*self.w_quad[:,1:2]*p_NN_quad_element) \
